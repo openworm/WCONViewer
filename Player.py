@@ -19,7 +19,7 @@ class Player(FuncAnimation):
         mini=0,
         maxi=100,
         pos=(0.125, 0.92),
-        **kwargs
+        **kwargs,
     ):
         self.i = 0
         self.min = mini
@@ -37,7 +37,7 @@ class Player(FuncAnimation):
             init_func=init_func,
             fargs=fargs,
             save_count=save_count,
-            **kwargs
+            **kwargs,
         )
 
     def play(self):
@@ -92,11 +92,11 @@ class Player(FuncAnimation):
         fax = divider.append_axes("right", size="80%", pad=0.05)
         ofax = divider.append_axes("right", size="100%", pad=0.05)
         sliderax = divider.append_axes("right", size="500%", pad=0.07)
-        self.button_oneback = matplotlib.widgets.Button(playerax, label="$\u29CF$")
-        self.button_back = matplotlib.widgets.Button(bax, label="$\u25C0$")
-        self.button_stop = matplotlib.widgets.Button(sax, label="$\u25A0$")
-        self.button_forward = matplotlib.widgets.Button(fax, label="$\u25B6$")
-        self.button_oneforward = matplotlib.widgets.Button(ofax, label="$\u29D0$")
+        self.button_oneback = matplotlib.widgets.Button(playerax, label="$\u29cf$")
+        self.button_back = matplotlib.widgets.Button(bax, label="$\u25c0$")
+        self.button_stop = matplotlib.widgets.Button(sax, label="$\u25a0$")
+        self.button_forward = matplotlib.widgets.Button(fax, label="$\u25b6$")
+        self.button_oneforward = matplotlib.widgets.Button(ofax, label="$\u29d0$")
         self.button_oneback.on_clicked(self.onebackward)
         self.button_back.on_clicked(self.backward)
         self.button_stop.on_clicked(self.stop)
