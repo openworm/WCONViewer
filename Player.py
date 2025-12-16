@@ -19,6 +19,8 @@ class Player(FuncAnimation):
         mini=0,
         maxi=100,
         pos=(0.125, 0.92),
+        times=None,
+        t_units="",
         **kwargs,
     ):
         self.i = 0
@@ -39,6 +41,8 @@ class Player(FuncAnimation):
             save_count=save_count,
             **kwargs,
         )
+        self.times = times
+        self.t_units = t_units
 
     def play(self):
         while self.runs:
@@ -82,6 +86,7 @@ class Player(FuncAnimation):
             self.i -= 1
         self.func(self.i)
         self.slider.set_val(self.i)
+
         self.fig.canvas.draw_idle()
 
     def setup(self, pos):
@@ -105,14 +110,32 @@ class Player(FuncAnimation):
         self.slider = matplotlib.widgets.Slider(
             sliderax, "", self.min, self.max, valinit=self.i
         )
+        self.slider.valtext.set_visible(False)
         self.slider.on_changed(self.set_pos)
+        self.slider.label.set_horizontalalignment("left")
+        label_position = self.slider.label.get_position()  # Get the current position
+        self.slider.label.set_position(
+            (label_position[0] + 1.1, label_position[1])
+        )  # Adjust x-coordinate
+
+        # self.text_box = matplotlib.widgets.TextBox(textax, label="", initial="0 ms")
 
     def set_pos(self, i):
         self.i = int(self.slider.val)
         self.func(self.i)
+        self.set_time_text(self.i)
+
+    def set_time_text(self, i):
+        time_text = str(i)
+        if self.times is not None:
+            time_text = "%s%s" % (self.times[i], self.t_units)
+
+        # self.text_box.set_val(time_text)
+        self.slider.label.set_text(time_text)
 
     def update(self, i):
         self.slider.set_val(i)
+        self.set_time_text(i)
 
 
 if __name__ == "__main__":
