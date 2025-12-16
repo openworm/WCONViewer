@@ -127,12 +127,22 @@ def main():
 
         ax.set_ylim([-1.5, 1.5])
 
-    t = np.array(wcon["data"][0]["t"])
+    t_units = ""
+    x_units = ""
+    y_units = ""
+
+    if "units" in wcon:
+        t_units = wcon["units"].get("t")
+        x_units = wcon["units"].get("x")
+        y_units = wcon["units"].get("y")
+        print(f"Time units: {t_units}, x units: {x_units}, y units: {y_units}")
+
+    times = np.array(wcon["data"][0]["t"])
     x = np.array(wcon["data"][0]["x"]).T
     y = np.array(wcon["data"][0]["y"]).T
 
     print(
-        f"Range of time: {t[0]}->{t[0]}; x range: {x.max()}->{x.min()}; y range: {y.max()}->{y.min()}"
+        f"Range of time: {times[0]}{t_units}->{times[-1]}{t_units}; x range: {x.max()}{x_units}->{x.min()}{x_units}; y range: {y.max()}{y_units}->{y.min()}{y_units}"
     )
     factor = 0.05
     if abs(x.max() - x.min()) > abs(y.max() - y.min()):
@@ -146,7 +156,7 @@ def main():
         mid = (x.max() + x.min()) / 2
         ax.set_xlim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
 
-    num_steps = t.size
+    num_steps = times.size
 
     if "px" in wcon["data"][0] and "py" in wcon["data"][0]:
         if args.ignore_wcon_perimeter:
@@ -170,13 +180,14 @@ def main():
     def update(ti):
         global midline_plot, perimeter_plot
         f = ti / num_steps
+        t = times[ti]
 
         color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
-        print("Time step: %s, fract: %f, color: %s" % (ti, f, color))
+        print("Time %s%s, step: %s, fract: %f, color: %s" % (t, t_units, ti, f, color))
 
         if midline_plot is None:
             (midline_plot,) = ax.plot(
-                x[:, ti], y[:, ti], color="g", label="t=%sms" % t[ti], linewidth=0.5
+                x[:, ti], y[:, ti], color="g", label="t=%sms" % times[ti], linewidth=0.5
             )
         else:
             midline_plot.set_data(x[:, ti], y[:, ti])
@@ -189,7 +200,9 @@ def main():
             else:
                 perimeter_plot.set_data(px[:, ti], py[:, ti])
 
-    anim = Player(fig, update, maxi=num_steps - 1)
+    anim = Player(
+        fig, update, maxi=num_steps - 1, times=[t for t in times], t_units=t_units
+    )
 
     # TODO WormViewCSV and WormViewWCON - should WormViewCSV just be the original WormView? That's what it initially did.
     # TODO Could take out Player and WormViewWCON into separate repo - Taking out Player could be ugly. It is quite coupled with WormView due to the update function.

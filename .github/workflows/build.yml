@@ -1,0 +1,41 @@
+name: Test viewer 
+
+on:
+  push:
+    branches: [ main, development, test* ]
+  pull_request:
+    branches: [ main, development, test* ]
+
+jobs:
+  build:
+
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:        
+        runs-on: [ubuntu-latest]
+        python-version: [ "3.10", "3.12" ]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python  ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version:  ${{ matrix.python-version }}
+
+        
+    - name: Install dependencies
+      run: |
+       sudo apt-get update
+        sudo apt-get install ffmpeg -y 
+        pip install numpy matplotlib ruff 
+
+    - name: Test WCONViewer
+      run: |
+        ./test_all.sh
+        
+      
+    - name: Print info on files
+      run: |
+        ls -alt
