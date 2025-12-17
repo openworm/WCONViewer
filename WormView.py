@@ -10,6 +10,7 @@ from Player import Player
 # Global variables
 midline_plot = None
 perimeter_plot = None
+times = None
 
 
 def validate_file(file_path):
@@ -65,39 +66,8 @@ def get_perimeter(x, y, r):
     return px, py
 
 
-def main():
-    # Default behavior is to use (px, py) if it exists, and if it doesn’t then automatically generate the perimeter from the midline.
-    parser = argparse.ArgumentParser(
-        description="Open a player for the worm behaviour."
-    )
-    parser.add_argument(
-        "-f", "--wcon_file", type=validate_file, help="WCON file path", required=True
-    )
-    parser.add_argument(
-        "-nogui", action="store_true", help="Just load file, don't show GUI"
-    )
-    parser.add_argument(
-        "-s",
-        "--suppress_automatic_generation",
-        action="store_true",
-        help="Suppress the automatic generation of a perimeter which would be computed from the midline of the worm. If (px, py) is not specified in the WCON, a perimeter will not be shown.",
-    )
-    parser.add_argument(
-        "-i",
-        "--ignore_wcon_perimeter",
-        action="store_true",
-        help="Ignore (px, py) values in the WCON. Instead, a perimeter is automatically generated based on the midline of the worm.",
-    )
-    parser.add_argument(
-        "-r",
-        "--minor_radius",
-        type=float,
-        default=40e-3,
-        help="Minor radius of the worm in millimeters (default: 40e-3)",
-        required=False,
-    )
-
-    args = parser.parse_args()
+def get_plot(args):
+    global times, t_units, x, y, px, py, ax
 
     fig, ax = plt.subplots()
     plt.get_current_fig_manager().set_window_title("WCON replay")
@@ -156,8 +126,6 @@ def main():
         mid = (x.max() + x.min()) / 2
         ax.set_xlim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
 
-    num_steps = times.size
-
     if "px" in wcon["data"][0] and "py" in wcon["data"][0]:
         if args.ignore_wcon_perimeter:
             print(
@@ -177,35 +145,82 @@ def main():
             px = None
             py = None
 
-    def update(ti):
-        global midline_plot, perimeter_plot
-        f = ti / num_steps
-        t = times[ti]
+    return fig, ax
 
-        color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
-        print("Time %s%s, step: %s, fract: %f, color: %s" % (t, t_units, ti, f, color))
 
-        if midline_plot is None:
-            (midline_plot,) = ax.plot(
-                x[:, ti], y[:, ti], color="g", label="t=%sms" % times[ti], linewidth=0.5
-            )
+def update(ti):
+    global midline_plot, perimeter_plot, times, t_units, x, y, px, py, ax
+
+    f = ti / len(times)
+    t = times[ti]
+
+    color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
+    print("Time %s%s, step: %s, fract: %f, color: %s" % (t, t_units, ti, f, color))
+
+    if midline_plot is None:
+        (midline_plot,) = ax.plot(
+            x[:, ti], y[:, ti], color="g", label="t=%sms" % times[ti], linewidth=0.5
+        )
+    else:
+        midline_plot.set_data(x[:, ti], y[:, ti])
+
+    if px is not None and py is not None:
+        if perimeter_plot is None:
+            (perimeter_plot,) = ax.plot(px[:, ti], py[:, ti], color="grey", linewidth=1)
         else:
-            midline_plot.set_data(x[:, ti], y[:, ti])
+            perimeter_plot.set_data(px[:, ti], py[:, ti])
 
-        if px is not None and py is not None:
-            if perimeter_plot is None:
-                (perimeter_plot,) = ax.plot(
-                    px[:, ti], py[:, ti], color="grey", linewidth=1
-                )
-            else:
-                perimeter_plot.set_data(px[:, ti], py[:, ti])
 
-    anim = Player(
-        fig, update, maxi=num_steps - 1, times=[t for t in times], t_units=t_units
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Open a player for the worm behaviour."
+    )
+    parser.add_argument(
+        "-f",
+        "--wcon_file",
+        type=validate_file,
+        help="WCON file path",
+        default="examples/simdata.wcon",
+    )
+    parser.add_argument(
+        "-nogui", action="store_true", help="Just load file, don't show GUI"
+    )
+    parser.add_argument(
+        "-s",
+        "--suppress_automatic_generation",
+        action="store_true",
+        help="Suppress the automatic generation of a perimeter which would be computed from the midline of the worm. If (px, py) is not specified in the WCON, a perimeter will not be shown.",
+    )
+    parser.add_argument(
+        "-i",
+        "--ignore_wcon_perimeter",
+        action="store_true",
+        help="Ignore (px, py) values in the WCON. Instead, a perimeter is automatically generated based on the midline of the worm.",
+    )
+    parser.add_argument(
+        "-r",
+        "--minor_radius",
+        type=float,
+        default=40e-3,
+        help="Minor radius of the worm in millimeters (default: 40e-3)",
+        required=False,
     )
 
-    # TODO WormViewCSV and WormViewWCON - should WormViewCSV just be the original WormView? That's what it initially did.
-    # TODO Could take out Player and WormViewWCON into separate repo - Taking out Player could be ugly. It is quite coupled with WormView due to the update function.
+    args = parser.parse_args()
+
+    return args
+
+
+def main():
+    # Default behavior is to use (px, py) if it exists, and if it doesn’t then automatically generate the perimeter from the midline.
+
+    args = parse_args()
+
+    fig, ax = get_plot(args)
+
+    anim = Player(
+        fig, update, maxi=len(times) - 1, times=[t for t in times], t_units=t_units
+    )
 
     if not args.nogui:
         plt.show()
