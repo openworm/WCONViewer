@@ -7,10 +7,6 @@ import argparse
 import sys
 from Player import Player
 
-# Global variables
-midline_plot = None
-perimeter_plot = None
-
 
 def validate_file(file_path):
     if not os.path.exists(file_path):
@@ -20,58 +16,244 @@ def validate_file(file_path):
     return file_path
 
 
-def get_perimeter(x, y, r):
-    n_bar = x.shape[0]
-    num_steps = x.shape[1]
+class SimpleWCON:
+    def __init__(self, wcon_file):
 
-    n_seg = int(n_bar - 1)
+        with open(wcon_file, "r") as f:
+            print(f"  === Loading WCON from file: {wcon_file}...")
+            wcon = json.load(f)
 
-    # radii along the body of the worm
-    r_i = np.array(
-        [
-            r * abs(math.sin(math.acos(((i) - n_seg / 2.0) / (n_seg / 2.0 + 0.2))))
-            for i in range(n_bar)
-        ]
-    ).reshape(-1, 1)
+        print(
+            " - WCON file loaded. Keys found: "
+            + ", ".join(wcon.keys())
+            + ". Processing data..."
+        )
 
-    diff_x = np.diff(x, axis=0)
-    diff_y = np.diff(y, axis=0)
+        self.extras = {}
+        for key in wcon:
+            if key.startswith("@"):
+                self.extras[key] = wcon[key]
 
-    arctan = np.arctan2(diff_x, -diff_y)
-    d_arr = np.zeros((n_bar, num_steps))
+        self.t_units = "??"
+        self.x_units = "??"
+        self.y_units = "??"
 
-    d_mask = np.full((n_bar, num_steps), False)
-    arctan_diff = np.abs(np.diff(arctan, axis=0)) > np.pi
-    d_mask[1:-1, :] = arctan_diff
+        if "units" in wcon:
+            self.t_units = wcon["units"].get("t")
+            self.x_units = wcon["units"].get("x")
+            self.y_units = wcon["units"].get("y")
+            print(
+                f"   Time units: {self.t_units}, x units: {self.x_units}, y units: {self.y_units}"
+            )
 
-    # d of worm endpoints is based off of two points, whereas d of non-endpoints is based off of 3 (x, y) points
+        print(" - Data points: %d" % len(wcon["data"]))
+        print(" - Data keys: %s" % list(wcon["data"][0].keys()))
+        print(" - Data time: %s" % len(wcon["data"][0]["t"]))
+        print(" - Data x: %s" % len(wcon["data"][0]["x"]))
+        print(" - Data y: %s" % len(wcon["data"][0]["y"]))
 
-    d_arr[:-1, :] = arctan
-    d_arr[1:, :] = d_arr[1:, :] + arctan
-    d_arr[1:-1, :] = d_arr[1:-1, :] / 2
-    d_arr = d_arr - np.pi * d_mask
-    dx = np.cos(d_arr) * r_i
-    dy = np.sin(d_arr) * r_i
+        self.times = np.array(wcon["data"][0]["t"])
+        self.x = np.array(wcon["data"][0]["x"]).T
+        self.y = np.array(wcon["data"][0]["y"]).T
 
-    px = np.zeros((2 * n_bar, x.shape[1]))
-    py = np.zeros((2 * n_bar, x.shape[1]))
+        # Required for expeerimental wcon data...
+        # replace any values in self.x and self.y which are None with nan
+        self.x = np.where(self.x == None, np.nan, self.x)  # noqa: E711
+        self.y = np.where(self.y == None, np.nan, self.y)  # noqa: E711
 
-    px[:n_bar, :] = x - dx
-    px[n_bar:, :] = np.flipud(x + dx)  # Make perimeter counter-clockwise
+        print(f"Times: {self.times}, shape: {self.times.shape}")
+        print(f"x: {self.x}, shape: {self.x.shape}")
+        print(f"y: {self.y}, shape: {self.y.shape}")
 
-    py[:n_bar, :] = y - dy
-    py[n_bar:, :] = np.flipud(y + dy)  # Make perimeter counter-clockwise
+        self.xmax = np.nanmax(self.x)
+        self.xmin = np.nanmin(self.x)
+        self.ymax = np.nanmax(self.y)
+        self.ymin = np.nanmin(self.y)
+        print(
+            f"Range of time: {self.times[0]}{self.t_units}->{self.times[-1]}{self.t_units}; x range: {self.xmax}{self.x_units}->{self.xmin}{self.x_units}; y range: {self.ymax}{self.y_units}->{self.ymin}{self.y_units}"
+        )
 
-    return px, py
+        self.px = wcon["data"][0]["px"] if "px" in wcon["data"][0] else None
+        self.py = wcon["data"][0]["py"] if "py" in wcon["data"][0] else None
 
 
-def main():
-    # Default behavior is to use (px, py) if it exists, and if it doesn’t then automatically generate the perimeter from the midline.
+class WormView:
+    midline_plot = None
+    perimeter_plot = None
+    times = None
+
+    def get_perimeter(self, x, y, r):
+        n_bar = x.shape[0]
+        num_steps = x.shape[1]
+
+        n_seg = int(n_bar - 1)
+
+        # radii along the body of the worm
+        r_i = np.array(
+            [
+                r * abs(math.sin(math.acos(((i) - n_seg / 2.0) / (n_seg / 2.0 + 0.2))))
+                for i in range(n_bar)
+            ]
+        ).reshape(-1, 1)
+
+        diff_x = np.diff(x, axis=0)
+        diff_y = np.diff(y, axis=0)
+
+        arctan = np.arctan2(diff_x, -diff_y)
+        d_arr = np.zeros((n_bar, num_steps))
+
+        d_mask = np.full((n_bar, num_steps), False)
+        arctan_diff = np.abs(np.diff(arctan, axis=0)) > np.pi
+        d_mask[1:-1, :] = arctan_diff
+
+        # d of worm endpoints is based off of two points, whereas d of non-endpoints is based off of 3 (x, y) points
+
+        d_arr[:-1, :] = arctan
+        d_arr[1:, :] = d_arr[1:, :] + arctan
+        d_arr[1:-1, :] = d_arr[1:-1, :] / 2
+        d_arr = d_arr - np.pi * d_mask
+        dx = np.cos(d_arr) * r_i
+        dy = np.sin(d_arr) * r_i
+
+        px = np.zeros((2 * n_bar, x.shape[1]))
+        py = np.zeros((2 * n_bar, x.shape[1]))
+
+        px[:n_bar, :] = x - dx
+        px[n_bar:, :] = np.flipud(x + dx)  # Make perimeter counter-clockwise
+
+        py[:n_bar, :] = y - dy
+        py[n_bar:, :] = np.flipud(y + dy)  # Make perimeter counter-clockwise
+
+        return px, py
+
+    def reset(self):
+
+        print(" - Resetting WormView")
+        self.midline_plot = None
+        self.perimeter_plot = None
+        plt.close("all")
+
+    def get_plot(self, args):
+        # global times, t_units, x, y, px, py, ax
+
+        self.fig, self.ax = plt.subplots()
+
+        plt.get_current_fig_manager().set_window_title("WCON replay")
+        self.ax.set_aspect("equal")
+
+        self.wcon = SimpleWCON(args.wcon_file)
+
+        self.ax.set_xlabel("x (%s)" % self.wcon.x_units)
+        self.ax.set_ylabel("y (%s)" % self.wcon.y_units)
+
+        factor = 0.05
+        if abs(self.wcon.xmax - self.wcon.xmin) > abs(self.wcon.ymax - self.wcon.ymin):
+            side = abs(self.wcon.xmax - self.wcon.xmin)
+            self.ax.set_xlim(
+                [self.wcon.xmin - side * factor, self.wcon.xmax + side * factor]
+            )
+            mid = (self.wcon.ymax + self.wcon.ymin) / 2
+            self.ax.set_ylim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
+        else:
+            side = abs(self.wcon.ymax - self.wcon.ymin)
+            self.ax.set_ylim(
+                [self.wcon.ymin - side * factor, self.wcon.ymax + side * factor]
+            )
+            mid = (self.wcon.xmax + self.wcon.xmin) / 2
+            self.ax.set_xlim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
+
+        if "@CelegansNeuromechanicalGaitModulation" in self.wcon.extras:
+            center_x_arr = self.wcon.extras["@CelegansNeuromechanicalGaitModulation"][
+                "objects"
+            ]["circles"]["x"]
+            center_y_arr = self.wcon.extras["@CelegansNeuromechanicalGaitModulation"][
+                "objects"
+            ]["circles"]["y"]
+            radius_arr = self.wcon.extras["@CelegansNeuromechanicalGaitModulation"][
+                "objects"
+            ]["circles"]["r"]
+
+            for center_x, center_y, radius in zip(
+                center_x_arr, center_y_arr, radius_arr
+            ):
+                circle = plt.Circle((center_x, center_y), radius, color="b")
+                self.ax.add_patch(circle)
+        else:
+            print("No objects found")
+
+            # Set the limits of the plot since we don't have any objects to help with autoscaling
+
+            self.ax.set_ylim([-1.5, 1.5])
+
+        if self.wcon.px is not None and self.wcon.py is not None:
+            if args.ignore_wcon_perimeter:
+                print(
+                    "Ignoring (px, py) values in WCON file and computing perimeter from midline."
+                )
+                self.px, self.py = self.get_perimeter(self.x, self.y, args.minor_radius)
+            else:
+                print("Using (px, py) from WCON file")
+                self.px = np.array(self.wcon.px).T
+                self.py = np.array(self.wcon.py).T
+        else:
+            if not args.suppress_automatic_generation:
+                print("Computing perimeter from midline")
+                self.px, self.py = self.get_perimeter(
+                    self.wcon.x, self.wcon.y, args.minor_radius
+                )
+            else:
+                print("Not computing perimeter from midline")
+                self.px = None
+                self.py = None
+
+        return self.fig, self.ax
+
+    def update(self, ti):
+        f = ti / len(self.wcon.times)
+        t = self.wcon.times[ti]
+        print(
+            f" - Updating WormView for time index: {ti} ({t}{self.wcon.t_units}), with {len(self.wcon.x[:, ti])} x points and {len(self.wcon.y[:, ti])} y points."
+        )
+        # global midline_plot, perimeter_plot, times, t_units, x, y, px, py, ax
+
+        color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
+        print(
+            "     Time %s %s, step: %s, fract: %f, color: %s"
+            % (t, self.wcon.t_units, ti, f, color)
+        )
+
+        if self.midline_plot is None:
+            (self.midline_plot,) = self.ax.plot(
+                self.wcon.x[:, ti],
+                self.wcon.y[:, ti],
+                color="g",
+                label="t=%sms" % self.wcon.times[ti],
+                linewidth=0.5,
+            )
+        else:
+            self.midline_plot.set_data(self.wcon.x[:, ti], self.wcon.y[:, ti])
+
+        if self.px is not None and self.py is not None:
+            if self.perimeter_plot is None:
+                (self.perimeter_plot,) = self.ax.plot(
+                    self.px[:, ti], self.py[:, ti], color="grey", linewidth=1
+                )
+            else:
+                self.perimeter_plot.set_data(self.px[:, ti], self.py[:, ti])
+
+        return self.midline_plot, self.perimeter_plot
+
+
+def parse_args():
     parser = argparse.ArgumentParser(
         description="Open a player for the worm behaviour."
     )
     parser.add_argument(
-        "-f", "--wcon_file", type=validate_file, help="WCON file path", required=True
+        "-f",
+        "--wcon_file",
+        type=validate_file,
+        help="WCON file path",
+        default="examples/simdata.wcon",
     )
     parser.add_argument(
         "-nogui", action="store_true", help="Just load file, don't show GUI"
@@ -99,113 +281,29 @@ def main():
 
     args = parser.parse_args()
 
-    fig, ax = plt.subplots()
-    plt.get_current_fig_manager().set_window_title("WCON replay")
-    ax.set_aspect("equal")
+    return args
 
-    with open(args.wcon_file, "r") as f:
-        wcon = json.load(f)
 
-    if "@CelegansNeuromechanicalGaitModulation" in wcon:
-        center_x_arr = wcon["@CelegansNeuromechanicalGaitModulation"]["objects"][
-            "circles"
-        ]["x"]
-        center_y_arr = wcon["@CelegansNeuromechanicalGaitModulation"]["objects"][
-            "circles"
-        ]["y"]
-        radius_arr = wcon["@CelegansNeuromechanicalGaitModulation"]["objects"][
-            "circles"
-        ]["r"]
+def main():
+    # Default behavior is to use (px, py) if it exists, and if it doesn’t then automatically generate the perimeter from the midline.
 
-        for center_x, center_y, radius in zip(center_x_arr, center_y_arr, radius_arr):
-            circle = plt.Circle((center_x, center_y), radius, color="b")
-            ax.add_patch(circle)
-    else:
-        print("No objects found")
+    args = parse_args()
 
-        # Set the limits of the plot since we don't have any objects to help with autoscaling
+    wv = WormView()
 
-        ax.set_ylim([-1.5, 1.5])
-
-    t_units = ""
-    x_units = ""
-    y_units = ""
-
-    if "units" in wcon:
-        t_units = wcon["units"].get("t")
-        x_units = wcon["units"].get("x")
-        y_units = wcon["units"].get("y")
-        print(f"Time units: {t_units}, x units: {x_units}, y units: {y_units}")
-
-    times = np.array(wcon["data"][0]["t"])
-    x = np.array(wcon["data"][0]["x"]).T
-    y = np.array(wcon["data"][0]["y"]).T
-
-    print(
-        f"Range of time: {times[0]}{t_units}->{times[-1]}{t_units}; x range: {x.max()}{x_units}->{x.min()}{x_units}; y range: {y.max()}{y_units}->{y.min()}{y_units}"
-    )
-    factor = 0.05
-    if abs(x.max() - x.min()) > abs(y.max() - y.min()):
-        side = abs(x.max() - x.min())
-        ax.set_xlim([x.min() - side * factor, x.max() + side * factor])
-        mid = (y.max() + y.min()) / 2
-        ax.set_ylim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
-    else:
-        side = abs(y.max() - y.min())
-        ax.set_ylim([y.min() - side * factor, y.max() + side * factor])
-        mid = (x.max() + x.min()) / 2
-        ax.set_xlim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
-
-    num_steps = times.size
-
-    if "px" in wcon["data"][0] and "py" in wcon["data"][0]:
-        if args.ignore_wcon_perimeter:
-            print(
-                "Ignoring (px, py) values in WCON file and computing perimeter from midline."
-            )
-            px, py = get_perimeter(x, y, args.minor_radius)
-        else:
-            print("Using (px, py) from WCON file")
-            px = np.array(wcon["data"][0]["px"]).T
-            py = np.array(wcon["data"][0]["py"]).T
-    else:
-        if not args.suppress_automatic_generation:
-            print("Computing perimeter from midline")
-            px, py = get_perimeter(x, y, args.minor_radius)
-        else:
-            print("Not computing perimeter from midline")
-            px = None
-            py = None
+    fig, ax = wv.get_plot(args)
 
     def update(ti):
-        global midline_plot, perimeter_plot
-        f = ti / num_steps
-        t = times[ti]
-
-        color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
-        print("Time %s%s, step: %s, fract: %f, color: %s" % (t, t_units, ti, f, color))
-
-        if midline_plot is None:
-            (midline_plot,) = ax.plot(
-                x[:, ti], y[:, ti], color="g", label="t=%sms" % times[ti], linewidth=0.5
-            )
-        else:
-            midline_plot.set_data(x[:, ti], y[:, ti])
-
-        if px is not None and py is not None:
-            if perimeter_plot is None:
-                (perimeter_plot,) = ax.plot(
-                    px[:, ti], py[:, ti], color="grey", linewidth=1
-                )
-            else:
-                perimeter_plot.set_data(px[:, ti], py[:, ti])
+        print(" ------  Animating the plot for time index: %d" % ti)
+        return wv.update(ti)
 
     anim = Player(
-        fig, update, maxi=num_steps - 1, times=[t for t in times], t_units=t_units
+        fig,
+        update,
+        maxi=len(wv.wcon.times) - 1,
+        times=[t for t in wv.wcon.times],
+        t_units=wv.wcon.t_units,
     )
-
-    # TODO WormViewCSV and WormViewWCON - should WormViewCSV just be the original WormView? That's what it initially did.
-    # TODO Could take out Player and WormViewWCON into separate repo - Taking out Player could be ugly. It is quite coupled with WormView due to the update function.
 
     if not args.nogui:
         plt.show()
