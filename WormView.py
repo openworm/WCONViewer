@@ -19,9 +19,26 @@ def validate_file(file_path):
 class SimpleWCON:
     def __init__(self, wcon_file):
 
-        with open(wcon_file, "r") as f:
-            print(f"  === Loading WCON from file: {wcon_file}...")
-            wcon = json.load(f)
+        # Check whether the filename ends with wcon.zip, and if so, unzip it, read the wcon file it contains and load the contents of that using json
+        if wcon_file.endswith("wcon.zip"):
+            import zipfile
+
+            with zipfile.ZipFile(wcon_file, "r") as zip_ref:
+                wcon_files = [f for f in zip_ref.namelist() if f.endswith(".wcon")]
+                if len(wcon_files) == 0:
+                    raise ValueError("No .wcon file found in the zip archive.")
+                elif len(wcon_files) > 1:
+                    raise ValueError(
+                        "Multiple .wcon files found in the zip archive. Not yet supported..."
+                    )
+                wcon_file_in_zip = wcon_files[0]
+                print(f"Extracting {wcon_file_in_zip} from {wcon_file}...")
+                with zip_ref.open(wcon_file_in_zip) as f:
+                    wcon = json.load(f)
+        else:
+            with open(wcon_file, "r") as f:
+                print(f"  === Loading WCON from file: {wcon_file}...")
+                wcon = json.load(f)
 
         print(
             " - WCON file loaded. Keys found: "
@@ -34,12 +51,13 @@ class SimpleWCON:
             if key.startswith("@"):
                 self.extras[key] = wcon[key]
 
-        self.t_units = "??"
-        self.x_units = "??"
-        self.y_units = "??"
+        self.t_units = "Unknown units"
+        self.x_units = "Unknown units"
+        self.y_units = "Unknown units"
 
         if "units" in wcon:
             self.t_units = wcon["units"].get("t")
+
             self.x_units = wcon["units"].get("x")
             self.y_units = wcon["units"].get("y")
             print(
@@ -53,13 +71,29 @@ class SimpleWCON:
         print(" - Data y: %s" % len(wcon["data"][0]["y"]))
 
         self.times = np.array(wcon["data"][0]["t"])
-        self.x = np.array(wcon["data"][0]["x"]).T
-        self.y = np.array(wcon["data"][0]["y"]).T
 
-        # Required for expeerimental wcon data...
-        # replace any values in self.x and self.y which are None with nan
-        self.x = np.where(self.x == None, np.nan, self.x)  # noqa: E711
-        self.y = np.where(self.y == None, np.nan, self.y)  # noqa: E711
+        factor = 1
+
+        if self.x_units == "millimeters" or self.x_units == "mm":
+            factor = 1
+            self.x_units_used = self.x_units
+            self.y_units_used = self.y_units
+        elif (
+            self.x_units == "micrometers"
+            or self.x_units == "um"
+            or self.x_units == "µm"
+        ):
+            factor = 1e-3
+            self.x_units_used = "mm"
+            self.y_units_used = "mm"
+        else:
+            self.x_units_used = self.x_units
+            self.y_units_used = self.y_units
+
+        # Cast to float so that any None values in experimental wcon data
+        # become nan (np.array([1.0, None], dtype=float) -> [1., nan]).
+        self.x = np.array(wcon["data"][0]["x"], dtype=float).T * factor
+        self.y = np.array(wcon["data"][0]["y"], dtype=float).T * factor
 
         print(f"Times: {self.times}, shape: {self.times.shape}")
         print(f"x: {self.x}, shape: {self.x.shape}")
@@ -70,17 +104,35 @@ class SimpleWCON:
         self.ymax = np.nanmax(self.y)
         self.ymin = np.nanmin(self.y)
         print(
-            f"Range of time: {self.times[0]}{self.t_units}->{self.times[-1]}{self.t_units}; x range: {self.xmax}{self.x_units}->{self.xmin}{self.x_units}; y range: {self.ymax}{self.y_units}->{self.ymin}{self.y_units}"
+            f"Range of time: {self.times[0]}{self.t_units}->{self.times[-1]}{self.t_units}; x range: {self.xmin}{self.x_units}->{self.xmax}{self.x_units}; y range: {self.ymin}{self.y_units}->{self.ymax}{self.y_units}"
         )
 
-        self.px = wcon["data"][0]["px"] if "px" in wcon["data"][0] else None
-        self.py = wcon["data"][0]["py"] if "py" in wcon["data"][0] else None
+        if "px" in wcon["data"][0]:
+            self.px = np.array(wcon["data"][0]["px"], dtype=float) * factor
+            print(
+                f"px shape: {np.array(self.px).shape}, max: {np.nanmax(self.px)}, min: {np.nanmin(self.px)}"
+            )
+        else:
+            self.px = None
+
+        if "py" in wcon["data"][0]:
+            self.py = np.array(wcon["data"][0]["py"], dtype=float) * factor
+            print(
+                f"py shape: {np.array(self.py).shape}, max: {np.nanmax(self.py)}, min: {np.nanmin(self.py)}"
+            )
+        else:
+            self.py = None
 
 
 class WormView:
     midline_plot = None
     perimeter_plot = None
+    head_plot = None
     times = None
+
+    def __init__(self, show_head=False):
+        self.show_head = show_head
+        print(" - Initializing WormView")
 
     def get_perimeter(self, x, y, r):
         n_bar = x.shape[0]
@@ -131,6 +183,7 @@ class WormView:
         print(" - Resetting WormView")
         self.midline_plot = None
         self.perimeter_plot = None
+        self.head_plot = None
         plt.close("all")
 
     def get_plot(self, args):
@@ -143,8 +196,8 @@ class WormView:
 
         self.wcon = SimpleWCON(args.wcon_file)
 
-        self.ax.set_xlabel("x (%s)" % self.wcon.x_units)
-        self.ax.set_ylabel("y (%s)" % self.wcon.y_units)
+        self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
+        self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
 
         factor = 0.05
         if abs(self.wcon.xmax - self.wcon.xmin) > abs(self.wcon.ymax - self.wcon.ymin):
@@ -180,10 +233,6 @@ class WormView:
                 self.ax.add_patch(circle)
         else:
             print("No objects found")
-
-            # Set the limits of the plot since we don't have any objects to help with autoscaling
-
-            self.ax.set_ylim([-1.5, 1.5])
 
         if self.wcon.px is not None and self.wcon.py is not None:
             if args.ignore_wcon_perimeter:
@@ -241,7 +290,21 @@ class WormView:
             else:
                 self.perimeter_plot.set_data(self.px[:, ti], self.py[:, ti])
 
-        return self.midline_plot, self.perimeter_plot
+        if self.show_head:
+            if self.head_plot is None:
+                print("Adding head")
+                (self.head_plot,) = self.ax.plot(
+                    [self.wcon.x[0, ti]],
+                    [self.wcon.y[0, ti]],
+                    color="r",
+                    marker="o",
+                    label="t=%sms" % self.wcon.times[ti],
+                    linewidth=2,
+                )
+            else:
+                self.head_plot.set_data([self.wcon.x[0, ti]], [self.wcon.y[0, ti]])
+
+        return self.midline_plot, self.perimeter_plot, self.head_plot
 
 
 def parse_args():
@@ -278,6 +341,12 @@ def parse_args():
         help="Minor radius of the worm in millimeters (default: 40e-3)",
         required=False,
     )
+    parser.add_argument(
+        "-head",
+        "--show_head",
+        action="store_true",
+        help="Show the head of the worm.",
+    )
 
     args = parser.parse_args()
 
@@ -289,7 +358,9 @@ def main():
 
     args = parse_args()
 
-    wv = WormView()
+    print(" - Arguments parsed: %s" % args)
+
+    wv = WormView(show_head=args.show_head)
 
     fig, ax = wv.get_plot(args)
 
@@ -313,7 +384,7 @@ def main():
         from matplotlib.animation import FFMpegWriter
 
         FFwriter = FFMpegWriter(fps=10)
-        mp4_file = args.wcon_file.replace(".wcon", ".mp4")
+        mp4_file = args.wcon_file.replace(".wcon.zip", ".wcon").replace(".wcon", ".mp4")
         print(f"Saving animation to: {mp4_file}")
         anim.save(mp4_file, writer=FFwriter)
 
