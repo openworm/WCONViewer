@@ -64,13 +64,26 @@ class SimpleWCON:
                 f"   Time units: {self.t_units}, x units: {self.x_units}, y units: {self.y_units}"
             )
 
-        print(" - Data points: %d" % len(wcon["data"]))
-        print(" - Data keys: %s" % list(wcon["data"][0].keys()))
-        print(" - Data time: %s" % len(wcon["data"][0]["t"]))
-        print(" - Data x: %s" % len(wcon["data"][0]["x"]))
-        print(" - Data y: %s" % len(wcon["data"][0]["y"]))
+        # "data" is arrayable: it may be a single record object or a list of
+        # records (multiple worms / timepoint chunks). Normalise to a list.
+        data = wcon["data"]
+        if isinstance(data, dict):
+            data = [data]
 
-        self.times = np.array(wcon["data"][0]["t"])
+        record = data[0]
+        if len(data) > 1:
+            print(
+                " - Note: %d data records found; this minimal viewer only displays the first (id=%s)."
+                % (len(data), record.get("id"))
+            )
+
+        print(" - Data records: %d" % len(data))
+        print(" - Data keys: %s" % list(record.keys()))
+        print(" - Data time: %s" % len(record["t"]))
+        print(" - Data x: %s" % len(record["x"]))
+        print(" - Data y: %s" % len(record["y"]))
+
+        self.times = np.array(record["t"])
 
         factor = 1
 
@@ -92,8 +105,28 @@ class SimpleWCON:
 
         # Cast to float so that any None values in experimental wcon data
         # become nan (np.array([1.0, None], dtype=float) -> [1., nan]).
-        self.x = np.array(wcon["data"][0]["x"], dtype=float).T * factor
-        self.y = np.array(wcon["data"][0]["y"], dtype=float).T * factor
+        self.x = np.array(record["x"], dtype=float).T * factor
+        self.y = np.array(record["y"], dtype=float).T * factor
+
+        # Low-resolution trackers may give a single xy point per timepoint, so
+        # x/y are 1-D (n_timepoints,). Reshape to (1, n_timepoints) so that the
+        # [:, ti] indexing used downstream works uniformly with the spine case.
+        if self.x.ndim == 1:
+            self.x = self.x.reshape(1, -1)
+            self.y = self.y.reshape(1, -1)
+
+        # Variable origin: if ox/oy are present, all positional values at a
+        # timepoint are relative to that origin (spec: "Variable origin and
+        # centroid position"). A minimal reader must add it back to recover
+        # absolute coordinates. ox/oy are per-timepoint arrays (or a single
+        # local constant); x has shape (n_body, n_t) so (n_t,) broadcasts.
+        self.ox = record.get("ox")
+        self.oy = record.get("oy")
+        if self.ox is not None and self.oy is not None:
+            self.ox = np.atleast_1d(np.array(self.ox, dtype=float)) * factor
+            self.oy = np.atleast_1d(np.array(self.oy, dtype=float)) * factor
+            self.x = self.x + self.ox
+            self.y = self.y + self.oy
 
         print(f"Times: {self.times}, shape: {self.times.shape}")
         print(f"x: {self.x}, shape: {self.x.shape}")
@@ -107,16 +140,22 @@ class SimpleWCON:
             f"Range of time: {self.times[0]}{self.t_units}->{self.times[-1]}{self.t_units}; x range: {self.xmin}{self.x_units}->{self.xmax}{self.x_units}; y range: {self.ymin}{self.y_units}->{self.ymax}{self.y_units}"
         )
 
-        if "px" in wcon["data"][0]:
-            self.px = np.array(wcon["data"][0]["px"], dtype=float) * factor
+        if "px" in record:
+            self.px = np.array(record["px"], dtype=float) * factor  # (n_t, n_perim)
+            # px is arrayed per timepoint, so the origin (n_t,) is applied
+            # along axis 0 via a trailing axis.
+            if self.ox is not None and self.px.ndim == 2:
+                self.px = self.px + self.ox[:, None]
             print(
                 f"px shape: {np.array(self.px).shape}, max: {np.nanmax(self.px)}, min: {np.nanmin(self.px)}"
             )
         else:
             self.px = None
 
-        if "py" in wcon["data"][0]:
-            self.py = np.array(wcon["data"][0]["py"], dtype=float) * factor
+        if "py" in record:
+            self.py = np.array(record["py"], dtype=float) * factor  # (n_t, n_perim)
+            if self.oy is not None and self.py.ndim == 2:
+                self.py = self.py + self.oy[:, None]
             print(
                 f"py shape: {np.array(self.py).shape}, max: {np.nanmax(self.py)}, min: {np.nanmin(self.py)}"
             )
@@ -245,7 +284,7 @@ class WormView:
                 self.px = np.array(self.wcon.px).T
                 self.py = np.array(self.wcon.py).T
         else:
-            if not args.suppress_automatic_generation:
+            if not args.suppress_automatic_generation and self.wcon.x.shape[0] >= 2:
                 print("Computing perimeter from midline")
                 self.px, self.py = self.get_perimeter(
                     self.wcon.x, self.wcon.y, args.minor_radius
