@@ -1,11 +1,11 @@
 from matplotlib import pyplot as plt
 import numpy as np
-import json
 import math
 import os
 import argparse
 import sys
 from Player import Player
+from SimpleWCON import SimpleWCON
 
 
 def validate_file(file_path):
@@ -16,71 +16,15 @@ def validate_file(file_path):
     return file_path
 
 
-class SimpleWCON:
-    def __init__(self, wcon_file):
-
-        with open(wcon_file, "r") as f:
-            print(f"  === Loading WCON from file: {wcon_file}...")
-            wcon = json.load(f)
-
-        print(
-            " - WCON file loaded. Keys found: "
-            + ", ".join(wcon.keys())
-            + ". Processing data..."
-        )
-
-        self.extras = {}
-        for key in wcon:
-            if key.startswith("@"):
-                self.extras[key] = wcon[key]
-
-        self.t_units = "??"
-        self.x_units = "??"
-        self.y_units = "??"
-
-        if "units" in wcon:
-            self.t_units = wcon["units"].get("t")
-            self.x_units = wcon["units"].get("x")
-            self.y_units = wcon["units"].get("y")
-            print(
-                f"   Time units: {self.t_units}, x units: {self.x_units}, y units: {self.y_units}"
-            )
-
-        print(" - Data points: %d" % len(wcon["data"]))
-        print(" - Data keys: %s" % list(wcon["data"][0].keys()))
-        print(" - Data time: %s" % len(wcon["data"][0]["t"]))
-        print(" - Data x: %s" % len(wcon["data"][0]["x"]))
-        print(" - Data y: %s" % len(wcon["data"][0]["y"]))
-
-        self.times = np.array(wcon["data"][0]["t"])
-        self.x = np.array(wcon["data"][0]["x"]).T
-        self.y = np.array(wcon["data"][0]["y"]).T
-
-        # Required for expeerimental wcon data...
-        # replace any values in self.x and self.y which are None with nan
-        self.x = np.where(self.x == None, np.nan, self.x)  # noqa: E711
-        self.y = np.where(self.y == None, np.nan, self.y)  # noqa: E711
-
-        print(f"Times: {self.times}, shape: {self.times.shape}")
-        print(f"x: {self.x}, shape: {self.x.shape}")
-        print(f"y: {self.y}, shape: {self.y.shape}")
-
-        self.xmax = np.nanmax(self.x)
-        self.xmin = np.nanmin(self.x)
-        self.ymax = np.nanmax(self.y)
-        self.ymin = np.nanmin(self.y)
-        print(
-            f"Range of time: {self.times[0]}{self.t_units}->{self.times[-1]}{self.t_units}; x range: {self.xmax}{self.x_units}->{self.xmin}{self.x_units}; y range: {self.ymax}{self.y_units}->{self.ymin}{self.y_units}"
-        )
-
-        self.px = wcon["data"][0]["px"] if "px" in wcon["data"][0] else None
-        self.py = wcon["data"][0]["py"] if "py" in wcon["data"][0] else None
-
-
 class WormView:
     midline_plot = None
     perimeter_plot = None
+    head_plot = None
     times = None
+
+    def __init__(self, show_head=False):
+        self.show_head = show_head
+        print(" - Initializing WormView")
 
     def get_perimeter(self, x, y, r):
         n_bar = x.shape[0]
@@ -131,6 +75,7 @@ class WormView:
         print(" - Resetting WormView")
         self.midline_plot = None
         self.perimeter_plot = None
+        self.head_plot = None
         plt.close("all")
 
     def get_plot(self, args):
@@ -143,8 +88,8 @@ class WormView:
 
         self.wcon = SimpleWCON(args.wcon_file)
 
-        self.ax.set_xlabel("x (%s)" % self.wcon.x_units)
-        self.ax.set_ylabel("y (%s)" % self.wcon.y_units)
+        self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
+        self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
 
         factor = 0.05
         if abs(self.wcon.xmax - self.wcon.xmin) > abs(self.wcon.ymax - self.wcon.ymin):
@@ -181,10 +126,6 @@ class WormView:
         else:
             print("No objects found")
 
-            # Set the limits of the plot since we don't have any objects to help with autoscaling
-
-            self.ax.set_ylim([-1.5, 1.5])
-
         if self.wcon.px is not None and self.wcon.py is not None:
             if args.ignore_wcon_perimeter:
                 print(
@@ -196,7 +137,7 @@ class WormView:
                 self.px = np.array(self.wcon.px).T
                 self.py = np.array(self.wcon.py).T
         else:
-            if not args.suppress_automatic_generation:
+            if not args.suppress_automatic_generation and self.wcon.x.shape[0] >= 2:
                 print("Computing perimeter from midline")
                 self.px, self.py = self.get_perimeter(
                     self.wcon.x, self.wcon.y, args.minor_radius
@@ -241,7 +182,21 @@ class WormView:
             else:
                 self.perimeter_plot.set_data(self.px[:, ti], self.py[:, ti])
 
-        return self.midline_plot, self.perimeter_plot
+        if self.show_head:
+            if self.head_plot is None:
+                print("Adding head")
+                (self.head_plot,) = self.ax.plot(
+                    [self.wcon.x[0, ti]],
+                    [self.wcon.y[0, ti]],
+                    color="r",
+                    marker="o",
+                    label="t=%sms" % self.wcon.times[ti],
+                    linewidth=2,
+                )
+            else:
+                self.head_plot.set_data([self.wcon.x[0, ti]], [self.wcon.y[0, ti]])
+
+        return self.midline_plot, self.perimeter_plot, self.head_plot
 
 
 def parse_args():
@@ -278,6 +233,12 @@ def parse_args():
         help="Minor radius of the worm in millimeters (default: 40e-3)",
         required=False,
     )
+    parser.add_argument(
+        "-head",
+        "--show_head",
+        action="store_true",
+        help="Show the head of the worm.",
+    )
 
     args = parser.parse_args()
 
@@ -289,7 +250,9 @@ def main():
 
     args = parse_args()
 
-    wv = WormView()
+    print(" - Arguments parsed: %s" % args)
+
+    wv = WormView(show_head=args.show_head)
 
     fig, ax = wv.get_plot(args)
 
@@ -313,7 +276,7 @@ def main():
         from matplotlib.animation import FFMpegWriter
 
         FFwriter = FFMpegWriter(fps=10)
-        mp4_file = args.wcon_file.replace(".wcon", ".mp4")
+        mp4_file = args.wcon_file.replace(".wcon.zip", ".wcon").replace(".wcon", ".mp4")
         print(f"Saving animation to: {mp4_file}")
         anim.save(mp4_file, writer=FFwriter)
 
