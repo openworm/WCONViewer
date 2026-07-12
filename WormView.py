@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import numpy as np
 import math
 import os
@@ -6,6 +7,17 @@ import argparse
 import sys
 from Player import Player
 from SimpleWCON import SimpleWCON
+
+
+class HalfIntegerLocator(MultipleLocator):
+    """Locator placing ticks at half-integer values (..., -0.5, 0.5, 1.5, ...),
+    regardless of the current view limits (so it stays fixed while panning/zooming)."""
+
+    def __init__(self):
+        super().__init__(base=1.0)
+
+    def tick_values(self, vmin, vmax):
+        return super().tick_values(vmin - 0.5, vmax - 0.5) + 0.5
 
 
 def validate_file(file_path):
@@ -22,8 +34,17 @@ class WormView:
     head_plot = None
     times = None
 
-    def __init__(self, show_head=False):
+    zoom_to_worm = False
+    show_grid = False
+    zoom_side = 1.5
+
+    def __init__(
+        self, show_head=False, zoom_to_worm=False, show_grid=False, zoom_side=1.5
+    ):
         self.show_head = show_head
+        self.zoom_to_worm = zoom_to_worm
+        self.show_grid = show_grid
+        self.zoom_side = zoom_side
         print(" - Initializing WormView")
 
     def get_perimeter(self, x, y, r):
@@ -78,6 +99,50 @@ class WormView:
         self.head_plot = None
         plt.close("all")
 
+    def set_full_view_limits(self):
+        factor = 0.05
+        if abs(self.wcon.xmax - self.wcon.xmin) > abs(self.wcon.ymax - self.wcon.ymin):
+            side_x = abs(self.wcon.xmax - self.wcon.xmin)
+            self.ax.set_xlim(
+                [self.wcon.xmin - side_x * factor, self.wcon.xmax + side_x * factor]
+            )
+            mid = (self.wcon.ymax + self.wcon.ymin) / 2
+            self.ax.set_ylim(
+                [mid - side_x * (0.5 + factor), mid + side_x * (0.5 + factor)]
+            )
+        else:
+            side_y = abs(self.wcon.ymax - self.wcon.ymin)
+            self.ax.set_ylim(
+                [self.wcon.ymin - side_y * factor, self.wcon.ymax + side_y * factor]
+            )
+            mid = (self.wcon.xmax + self.wcon.xmin) / 2
+            self.ax.set_xlim(
+                [mid - side_y * (0.5 + factor), mid + side_y * (0.5 + factor)]
+            )
+
+    def set_zoom_to_worm(self, value):
+        print(" - Setting zoom_to_worm: %s" % value)
+        self.zoom_to_worm = value
+        if not value:
+            self.set_full_view_limits()
+
+    def set_show_grid(self, value):
+        print(" - Setting show_grid: %s" % value)
+        self.show_grid = value
+        if value:
+            self.ax.xaxis.set_major_locator(MultipleLocator(1))
+            self.ax.yaxis.set_major_locator(MultipleLocator(1))
+            self.ax.xaxis.set_minor_locator(HalfIntegerLocator())
+            self.ax.yaxis.set_minor_locator(HalfIntegerLocator())
+            self.ax.xaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
+            self.ax.yaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
+            self.ax.tick_params(axis="both", which="minor", labelsize=8)
+            self.ax.grid(True, which="major", linestyle="-", linewidth=0.5, alpha=0.7)
+            self.ax.grid(True, which="minor", linestyle=":", linewidth=0.5, alpha=0.7)
+        else:
+            self.ax.grid(False, which="major")
+            self.ax.grid(False, which="minor")
+
     def get_plot(self, args):
         # global times, t_units, x, y, px, py, ax
 
@@ -91,21 +156,10 @@ class WormView:
         self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
         self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
 
-        factor = 0.05
-        if abs(self.wcon.xmax - self.wcon.xmin) > abs(self.wcon.ymax - self.wcon.ymin):
-            side = abs(self.wcon.xmax - self.wcon.xmin)
-            self.ax.set_xlim(
-                [self.wcon.xmin - side * factor, self.wcon.xmax + side * factor]
-            )
-            mid = (self.wcon.ymax + self.wcon.ymin) / 2
-            self.ax.set_ylim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
-        else:
-            side = abs(self.wcon.ymax - self.wcon.ymin)
-            self.ax.set_ylim(
-                [self.wcon.ymin - side * factor, self.wcon.ymax + side * factor]
-            )
-            mid = (self.wcon.xmax + self.wcon.xmin) / 2
-            self.ax.set_xlim([mid - side * (0.5 + factor), mid + side * (0.5 + factor)])
+        if not self.zoom_to_worm:
+            self.set_full_view_limits()
+
+        self.set_show_grid(self.show_grid)
 
         if "@CelegansNeuromechanicalGaitModulation" in self.wcon.extras:
             center_x_arr = self.wcon.extras["@CelegansNeuromechanicalGaitModulation"][
@@ -196,6 +250,21 @@ class WormView:
             else:
                 self.head_plot.set_data([self.wcon.x[0, ti]], [self.wcon.y[0, ti]])
 
+        if self.zoom_to_worm:
+            xi = self.wcon.x[:, ti]
+            yi = self.wcon.y[:, ti]
+            if self.px is not None and self.py is not None:
+                xi = np.concatenate([xi, self.px[:, ti]])
+                yi = np.concatenate([yi, self.py[:, ti]])
+
+            cx = (np.nanmax(xi) + np.nanmin(xi)) / 2
+            cy = (np.nanmax(yi) + np.nanmin(yi)) / 2
+
+            half = self.zoom_side / 2
+
+            self.ax.set_xlim([cx - half, cx + half])
+            self.ax.set_ylim([cy - half, cy + half])
+
         return self.midline_plot, self.perimeter_plot, self.head_plot
 
 
@@ -239,6 +308,18 @@ def parse_args():
         action="store_true",
         help="Show the head of the worm.",
     )
+    parser.add_argument(
+        "-zoom",
+        "--zoom_to_worm",
+        action="store_true",
+        help="Zoom the view to the extent of the worm.",
+    )
+    parser.add_argument(
+        "-grid",
+        "--show_grid",
+        action="store_true",
+        help="Show the grid in the view.",
+    )
 
     args = parser.parse_args()
 
@@ -252,7 +333,11 @@ def main():
 
     print(" - Arguments parsed: %s" % args)
 
-    wv = WormView(show_head=args.show_head)
+    wv = WormView(
+        show_head=args.show_head,
+        zoom_to_worm=args.zoom_to_worm,
+        show_grid=args.show_grid,
+    )
 
     fig, ax = wv.get_plot(args)
 
@@ -266,7 +351,16 @@ def main():
         maxi=len(wv.wcon.times) - 1,
         times=[t for t in wv.wcon.times],
         t_units=wv.wcon.t_units,
+        grid_state=wv.show_grid,
+        zoom_state=wv.zoom_to_worm,
+        on_toggle_grid=wv.set_show_grid,
+        on_toggle_zoom=wv.set_zoom_to_worm,
     )
+
+    if args.nogui:
+        # Checkboxes are only useful for interactive control; don't bake them
+        # into the frames used for the saved movie.
+        anim.check_buttons.ax.set_visible(False)
 
     if not args.nogui:
         plt.show()

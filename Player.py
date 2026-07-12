@@ -21,6 +21,10 @@ class Player(FuncAnimation):
         pos=(0.125, 0.92),
         times=None,
         t_units="",
+        grid_state=False,
+        zoom_state=False,
+        on_toggle_grid=None,
+        on_toggle_zoom=None,
         **kwargs,
     ):
         self.i = 0
@@ -30,6 +34,10 @@ class Player(FuncAnimation):
         self.forwards = True
         self.fig = fig
         self.func = func
+        self.grid_state = grid_state
+        self.zoom_state = zoom_state
+        self.on_toggle_grid = on_toggle_grid
+        self.on_toggle_zoom = on_toggle_zoom
         self.setup(pos)
         FuncAnimation.__init__(
             self,
@@ -119,6 +127,27 @@ class Player(FuncAnimation):
         )  # Adjust x-coordinate
 
         # self.text_box = matplotlib.widgets.TextBox(textax, label="", initial="0 ms")
+
+        checkax = self.fig.add_axes([0.02, 0.01, 0.13, 0.08])
+        self.check_labels = ["Grid", "Zoom"]
+        self.check_buttons = matplotlib.widgets.CheckButtons(
+            checkax, self.check_labels, [self.grid_state, self.zoom_state]
+        )
+        self.check_buttons.on_clicked(self.on_check_clicked)
+
+    def on_check_clicked(self, label):
+        status = dict(zip(self.check_labels, self.check_buttons.get_status()))
+        if label == "Grid":
+            self.grid_state = status["Grid"]
+            if self.on_toggle_grid is not None:
+                self.on_toggle_grid(self.grid_state)
+        elif label == "Zoom":
+            self.zoom_state = status["Zoom"]
+            if self.on_toggle_zoom is not None:
+                self.on_toggle_zoom(self.zoom_state)
+
+        self.func(self.i)
+        self.fig.canvas.draw_idle()
 
     def set_pos(self, i):
         self.i = int(self.slider.val)
