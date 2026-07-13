@@ -21,6 +21,10 @@ class Player(FuncAnimation):
         pos=(0.125, 0.92),
         times=None,
         t_units="",
+        grid_state=False,
+        zoom_state=False,
+        on_toggle_grid=None,
+        on_toggle_zoom=None,
         **kwargs,
     ):
         self.i = 0
@@ -28,8 +32,13 @@ class Player(FuncAnimation):
         self.max = maxi
         self.runs = True
         self.forwards = True
+        self.step = 1
         self.fig = fig
         self.func = func
+        self.grid_state = grid_state
+        self.zoom_state = zoom_state
+        self.on_toggle_grid = on_toggle_grid
+        self.on_toggle_zoom = on_toggle_zoom
         self.setup(pos)
         FuncAnimation.__init__(
             self,
@@ -46,10 +55,11 @@ class Player(FuncAnimation):
 
     def play(self):
         while self.runs:
-            self.i = self.i + self.forwards - (not self.forwards)
-            if self.i > self.min and self.i < self.max:
+            self.i = self.i + self.step * (1 if self.forwards else -1)
+            if self.min < self.i < self.max:
                 yield self.i
             else:
+                self.i = self.max if self.forwards else self.min
                 self.stop()
                 yield self.i
 
@@ -63,10 +73,17 @@ class Player(FuncAnimation):
 
     def forward(self, event=None):
         self.forwards = True
+        self.step = 1
         self.start()
 
     def backward(self, event=None):
         self.forwards = False
+        self.step = 1
+        self.start()
+
+    def fastforward(self, event=None):
+        self.forwards = True
+        self.step = 10
         self.start()
 
     def oneforward(self, event=None):
@@ -95,17 +112,22 @@ class Player(FuncAnimation):
         bax = divider.append_axes("right", size="80%", pad=0.05)
         sax = divider.append_axes("right", size="80%", pad=0.05)
         fax = divider.append_axes("right", size="80%", pad=0.05)
+        ffax = divider.append_axes("right", size="80%", pad=0.05)
         ofax = divider.append_axes("right", size="100%", pad=0.05)
         sliderax = divider.append_axes("right", size="500%", pad=0.07)
         self.button_oneback = matplotlib.widgets.Button(playerax, label="$\u29cf$")
         self.button_back = matplotlib.widgets.Button(bax, label="$\u25c0$")
         self.button_stop = matplotlib.widgets.Button(sax, label="$\u25a0$")
         self.button_forward = matplotlib.widgets.Button(fax, label="$\u25b6$")
+        self.button_fastforward = matplotlib.widgets.Button(
+            ffax, label="$\u25b6\u25b6$"
+        )
         self.button_oneforward = matplotlib.widgets.Button(ofax, label="$\u29d0$")
         self.button_oneback.on_clicked(self.onebackward)
         self.button_back.on_clicked(self.backward)
         self.button_stop.on_clicked(self.stop)
         self.button_forward.on_clicked(self.forward)
+        self.button_fastforward.on_clicked(self.fastforward)
         self.button_oneforward.on_clicked(self.oneforward)
         self.slider = matplotlib.widgets.Slider(
             sliderax, "", self.min, self.max, valinit=self.i
@@ -119,6 +141,27 @@ class Player(FuncAnimation):
         )  # Adjust x-coordinate
 
         # self.text_box = matplotlib.widgets.TextBox(textax, label="", initial="0 ms")
+
+        checkax = self.fig.add_axes([0.02, 0.01, 0.13, 0.08])
+        self.check_labels = ["Grid", "Zoom"]
+        self.check_buttons = matplotlib.widgets.CheckButtons(
+            checkax, self.check_labels, [self.grid_state, self.zoom_state]
+        )
+        self.check_buttons.on_clicked(self.on_check_clicked)
+
+    def on_check_clicked(self, label):
+        status = dict(zip(self.check_labels, self.check_buttons.get_status()))
+        if label == "Grid":
+            self.grid_state = status["Grid"]
+            if self.on_toggle_grid is not None:
+                self.on_toggle_grid(self.grid_state)
+        elif label == "Zoom":
+            self.zoom_state = status["Zoom"]
+            if self.on_toggle_zoom is not None:
+                self.on_toggle_zoom(self.zoom_state)
+
+        self.func(self.i)
+        self.fig.canvas.draw_idle()
 
     def set_pos(self, i):
         self.i = int(self.slider.val)

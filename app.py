@@ -20,11 +20,11 @@ def make_args(wcon_file):
     )
 
 
-def load_view(wcon_file, show_head):
+def load_view(wcon_file, show_head, show_grid=False, zoom_to_worm=False):
     """Load and parse the WCON file once and build the figure. The result is
     kept in session_state so the (potentially large) file is parsed only when
     the file or options change, not on every frame."""
-    wv = WormView(show_head=show_head)
+    wv = WormView(show_head=show_head, show_grid=show_grid, zoom_to_worm=zoom_to_worm)
     wv.get_plot(make_args(wcon_file))
     return wv
 
@@ -33,13 +33,17 @@ st.title("WCON replay")
 
 wcon_file = st.text_input("WCON file", value=DEFAULT_WCON)
 show_head = st.checkbox("Show head", value=False)
+show_grid = st.checkbox("Show grid", value=False)
+zoom_to_worm = st.checkbox("Zoom to worm", value=False)
 
 # Load only when the file or options change; otherwise reuse the cached view.
-key = (wcon_file, show_head)
+key = (wcon_file, show_head, show_grid, zoom_to_worm)
 if st.session_state.get("loaded_key") != key:
     try:
         with st.spinner(f"Loading {wcon_file}..."):
-            st.session_state.wv = load_view(wcon_file, show_head)
+            st.session_state.wv = load_view(
+                wcon_file, show_head, show_grid, zoom_to_worm
+            )
     except Exception as e:
         st.error(f"Could not load '{wcon_file}': {e}")
         st.stop()
@@ -54,15 +58,41 @@ st.session_state.setdefault("t", 0)
 st.session_state.setdefault("running", False)
 
 # --- Controls (rendered before any rerun so they are always clickable) ---
-c1, c2, c3, c4 = st.columns(4)
-if c1.button("Play", use_container_width=True):
-    st.session_state.running = True
-if c2.button("Pause", use_container_width=True):
+c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+
+# one back
+if c1.button("$\u29cf$", use_container_width=True):
     st.session_state.running = False
-if c3.button("Step", use_container_width=True):
+    st.session_state.t -= 1
+
+# play backwards
+if c2.button("$\u25c0$", use_container_width=True):
+    st.session_state.running = True
+    st.session_state.t -= 1
+    st.session_state.step = -1
+
+# stop
+if c3.button("$\u25a0$", use_container_width=True):
+    st.session_state.running = False
+
+# play
+if c4.button("$\u25b6$", use_container_width=True):
+    st.session_state.running = True
+    st.session_state.t += 1
+    st.session_state.step = 1
+
+# fast forward
+if c5.button("$\u25b6\u25b6$", use_container_width=True):
+    st.session_state.running = True
+    st.session_state.t += 10
+    st.session_state.step = 10
+
+# step forward
+if c6.button("$\u29d0$", use_container_width=True):
     st.session_state.running = False
     st.session_state.t += 1
-if c4.button("Reset", use_container_width=True):
+
+if c7.button("Reset", use_container_width=True):
     st.session_state.running = False
     st.session_state.t = 0
 
@@ -86,6 +116,6 @@ if st.session_state.running:
     if ti >= n_frames - 1:
         st.session_state.running = False  # reached the end
     else:
-        st.session_state.t += 1
+        st.session_state.t += st.session_state.step
         time.sleep(FRAME_DELAY)
         st.rerun()
