@@ -36,7 +36,7 @@ class WormView:
 
     zoom_to_worm = False
     show_grid = False
-    zoom_side = 1.5
+    zoom_side = 1.5  # in mm
 
     def __init__(
         self, show_head=False, zoom_to_worm=False, show_grid=False, zoom_side=1.5
