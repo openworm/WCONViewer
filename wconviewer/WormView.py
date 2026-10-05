@@ -5,8 +5,8 @@ import math
 import os
 import argparse
 import sys
-from Player import Player
-from SimpleWCON import SimpleWCON
+from .Player import Player
+from .SimpleWCON import SimpleWCON
 
 
 class HalfIntegerLocator(MultipleLocator):
@@ -277,7 +277,7 @@ def parse_args():
         "--wcon_file",
         type=validate_file,
         help="WCON file path",
-        default="examples/simdata.wcon",
+        required=True,
     )
     parser.add_argument(
         "-nogui", action="store_true", help="Just load file, don't show GUI"

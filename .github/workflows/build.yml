@@ -29,14 +29,14 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install ffmpeg -y 
-        
-        pip install -r requirements.txt
 
     - name: Test WCONViewer
       run: |
-        ./test_all.sh
+      
+        ./test_all.sh # also does pip install . and ruff check
         
       
     - name: Print info on files
       run: |
+        pip list
         ls -alt
