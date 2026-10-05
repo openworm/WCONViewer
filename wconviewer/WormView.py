@@ -143,7 +143,13 @@ class WormView:
             self.ax.grid(False, which="major")
             self.ax.grid(False, which="minor")
 
-    def get_plot(self, args):
+    def get_plot(
+        self,
+        wcon_file,
+        ignore_wcon_perimeter=False,
+        suppress_automatic_generation=False,
+        minor_radius=40e-3,
+    ):
         # global times, t_units, x, y, px, py, ax
 
         self.fig, self.ax = plt.subplots()
@@ -151,7 +157,7 @@ class WormView:
         plt.get_current_fig_manager().set_window_title("WCON replay")
         self.ax.set_aspect("equal")
 
-        self.wcon = SimpleWCON(args.wcon_file)
+        self.wcon = SimpleWCON(wcon_file)
 
         self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
         self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
@@ -181,20 +187,20 @@ class WormView:
             print("No objects found")
 
         if self.wcon.px is not None and self.wcon.py is not None:
-            if args.ignore_wcon_perimeter:
+            if ignore_wcon_perimeter:
                 print(
                     "Ignoring (px, py) values in WCON file and computing perimeter from midline."
                 )
-                self.px, self.py = self.get_perimeter(self.x, self.y, args.minor_radius)
+                self.px, self.py = self.get_perimeter(self.x, self.y, minor_radius)
             else:
                 print("Using (px, py) from WCON file")
                 self.px = np.array(self.wcon.px).T
                 self.py = np.array(self.wcon.py).T
         else:
-            if not args.suppress_automatic_generation and self.wcon.x.shape[0] >= 2:
+            if not suppress_automatic_generation and self.wcon.x.shape[0] >= 2:
                 print("Computing perimeter from midline")
                 self.px, self.py = self.get_perimeter(
-                    self.wcon.x, self.wcon.y, args.minor_radius
+                    self.wcon.x, self.wcon.y, minor_radius
                 )
             else:
                 print("Not computing perimeter from midline")
@@ -273,11 +279,10 @@ def parse_args():
         description="Open a player for the worm behaviour."
     )
     parser.add_argument(
-        "-f",
-        "--wcon_file",
+        "wcon_file",
         type=validate_file,
+        metavar="WCON_FILE",
         help="WCON file path",
-        required=True,
     )
     parser.add_argument(
         "-nogui", action="store_true", help="Just load file, don't show GUI"
@@ -333,13 +338,38 @@ def main():
 
     print(" - Arguments parsed: %s" % args)
 
-    wv = WormView(
-        show_head=args.show_head,
-        zoom_to_worm=args.zoom_to_worm,
-        show_grid=args.show_grid,
+    show_worm_view(
+        args.wcon_file,
+        args.show_head,
+        args.zoom_to_worm,
+        args.show_grid,
+        args.nogui,
+        args.ignore_wcon_perimeter,
+        args.suppress_automatic_generation,
+        args.minor_radius,
     )
 
-    fig, ax = wv.get_plot(args)
+
+def show_worm_view(
+    wcon_file: str,
+    show_head: bool = False,
+    zoom_to_worm: bool = False,
+    show_grid: bool = False,
+    nogui: bool = False,
+    ignore_wcon_perimeter: bool = False,
+    suppress_automatic_generation: bool = False,
+    minor_radius: float = 40e-3,
+):
+
+    wv = WormView(
+        show_head=show_head,
+        zoom_to_worm=zoom_to_worm,
+        show_grid=show_grid,
+    )
+
+    fig, ax = wv.get_plot(
+        wcon_file, ignore_wcon_perimeter, suppress_automatic_generation, minor_radius
+    )
 
     def update(ti):
         print(" ------  Animating the plot for time index: %d" % ti)
@@ -357,12 +387,12 @@ def main():
         on_toggle_zoom=wv.set_zoom_to_worm,
     )
 
-    if args.nogui:
+    if nogui:
         # Checkboxes are only useful for interactive control; don't bake them
         # into the frames used for the saved movie.
         anim.check_buttons.ax.set_visible(False)
 
-    if not args.nogui:
+    if not nogui:
         plt.show()
     else:
         print("GUI suppressed, exiting without showing %s." % anim)
@@ -370,7 +400,7 @@ def main():
         from matplotlib.animation import FFMpegWriter
 
         FFwriter = FFMpegWriter(fps=10)
-        mp4_file = args.wcon_file.replace(".wcon.zip", ".wcon").replace(".wcon", ".mp4")
+        mp4_file = wcon_file.replace(".wcon.zip", ".wcon").replace(".wcon", ".mp4")
         print(f"Saving animation to: {mp4_file}")
         anim.save(mp4_file, writer=FFwriter)
 
