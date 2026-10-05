@@ -2,9 +2,9 @@ name: Test viewer
 
 on:
   push:
-    branches: [ main, development, test* ]
+    branches: [ main, development, test*, streamlit* ]
   pull_request:
-    branches: [ main, development, test* ]
+    branches: [ main, development, test*, streamlit* ]
 
 jobs:
   build:
