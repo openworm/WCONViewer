@@ -359,6 +359,7 @@ def show_worm_view(
     ignore_wcon_perimeter: bool = False,
     suppress_automatic_generation: bool = False,
     minor_radius: float = 40e-3,
+    start_play: bool = True,
 ):
 
     wv = WormView(
@@ -385,6 +386,8 @@ def show_worm_view(
         zoom_state=wv.zoom_to_worm,
         on_toggle_grid=wv.set_show_grid,
         on_toggle_zoom=wv.set_zoom_to_worm,
+        # When saving a movie (nogui) the animation always runs through
+        start_play=start_play or nogui,
     )
 
     if nogui:

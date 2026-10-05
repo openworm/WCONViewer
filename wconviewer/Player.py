@@ -25,6 +25,7 @@ class Player(FuncAnimation):
         zoom_state=False,
         on_toggle_grid=None,
         on_toggle_zoom=None,
+        start_play=True,
         **kwargs,
     ):
         self.i = 0
@@ -52,6 +53,15 @@ class Player(FuncAnimation):
         )
         self.times = times
         self.t_units = t_units
+
+        if not start_play:
+            # The animation timer is started by matplotlib on the first draw, so
+            # pause it from a draw callback registered after matplotlib's own.
+            def pause_after_first_draw(event):
+                self.fig.canvas.mpl_disconnect(cid)
+                self.stop()
+
+            cid = self.fig.canvas.mpl_connect("draw_event", pause_after_first_draw)
 
     def play(self):
         while self.runs:
