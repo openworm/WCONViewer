@@ -3,7 +3,7 @@ import time
 
 import streamlit as st
 
-from WormView import WormView
+from wconviewer.WormView import WormView
 
 DEFAULT_WCON = "examples/simdata.wcon"
 FRAME_DELAY = 0.1  # seconds between frames while playing

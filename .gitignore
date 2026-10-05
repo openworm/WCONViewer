@@ -1,3 +1,6 @@
 /__pycache__
 /.DS_Store
 /examples/*.mp4
+/old
+/build
+/*.egg-info

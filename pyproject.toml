@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "WCONViewer"
+version = "0.1.0"
+description = "Viewer for WCON (Worm tracker Commons Object Notation) files in 2D"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["numpy", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["ruff"]
+
+[project.scripts]
+wconviewer = "wconviewer.WormView:main"
+
+[tool.setuptools]
+packages = ["wconviewer"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
