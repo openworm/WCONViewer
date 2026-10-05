@@ -30,9 +30,11 @@ jobs:
         sudo apt-get update
         sudo apt-get install ffmpeg -y 
 
+        pip install ruff
+
     - name: Test WCONViewer
       run: |
-      
+
         ./test_all.sh # also does pip install . and ruff check
         
       
