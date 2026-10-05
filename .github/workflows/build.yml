@@ -27,9 +27,10 @@ jobs:
         
     - name: Install dependencies
       run: |
-       sudo apt-get update
+        sudo apt-get update
         sudo apt-get install ffmpeg -y 
-        pip install numpy matplotlib ruff 
+        
+        pip install -r requirements.txt
 
     - name: Test WCONViewer
       run: |
