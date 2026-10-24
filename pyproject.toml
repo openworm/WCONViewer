@@ -9,7 +9,7 @@ description = "Viewer for WCON (Worm tracker Commons Object Notation) files in 2
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["numpy", "matplotlib"]
+dependencies = ["numpy", "matplotlib", "jsonschema"]
 
 [project.optional-dependencies]
 dev = ["ruff"]
