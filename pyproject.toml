@@ -13,6 +13,7 @@ dependencies = ["numpy", "matplotlib", "jsonschema"]
 
 [project.optional-dependencies]
 dev = ["ruff"]
+qt = ["PyQt6"]
 
 [project.scripts]
 wconviewer = "wconviewer.WormView:main"

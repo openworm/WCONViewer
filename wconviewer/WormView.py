@@ -1,3 +1,4 @@
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import numpy as np
@@ -325,6 +326,13 @@ def parse_args():
         action="store_true",
         help="Show the grid in the view.",
     )
+    parser.add_argument(
+        "-curv",
+        "--show_curvature",
+        action="store_true",
+        default=False,
+        help="Show a plot of the curvature of the worm.",
+    )
 
     args = parser.parse_args()
 
@@ -347,6 +355,7 @@ def main():
         args.ignore_wcon_perimeter,
         args.suppress_automatic_generation,
         args.minor_radius,
+        show_curvature=args.show_curvature,
     )
 
 
@@ -359,8 +368,20 @@ def show_worm_view(
     ignore_wcon_perimeter: bool = False,
     suppress_automatic_generation: bool = False,
     minor_radius: float = 40e-3,
-    start_play: bool = True,
+    start_play: bool = False,
+    show_curvature: bool = False,
 ):
+
+    if not nogui:
+        # Use Qt for the interactive windows (e.g. so the curvature window can be
+        # positioned); nogui keeps the default backend so it can run headless
+        try:
+            matplotlib.use("QtAgg")
+        except ImportError:
+            print(
+                " - No Qt bindings found (e.g. pip install .[qt]), using the "
+                "default matplotlib backend: %s" % matplotlib.get_backend()
+            )
 
     wv = WormView(
         show_head=show_head,
@@ -371,6 +392,19 @@ def show_worm_view(
     fig, ax = wv.get_plot(
         wcon_file, ignore_wcon_perimeter, suppress_automatic_generation, minor_radius
     )
+
+    if show_curvature:
+        from wconviewer.Utils import compute_body_curvature, plot_body_curvature
+
+        body_curv_data = compute_body_curvature(wv.wcon.times, wv.wcon.x, wv.wcon.y)
+        fig_curv = plot_body_curvature(wv.wcon.times, body_curv_data)
+
+        # Only the Qt backends can position the window (not e.g. Agg)
+        window = getattr(fig_curv.canvas.manager, "window", None)
+        if hasattr(window, "setGeometry"):
+            window.setGeometry(10, 10, 640, 540)
+    else:
+        print(" - Not showing curvature plot")
 
     def update(ti):
         print(" ------  Animating the plot for time index: %d" % ti)

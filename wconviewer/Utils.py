@@ -2,6 +2,7 @@ import math
 import sys
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 
 from wconviewer.SimpleWCON import SimpleWCON
 
@@ -14,177 +15,67 @@ def print_(msg):
     print("WCONViewer >>> %s" % (msg))
 
 
-def analyse_wcon_file(
-    wcon_file_name,
-    rate_to_plot=1,
-    max_time_s=1e12,
-    plot=False,
-    save_figure1_to=None,
-    save_figure2_to=None,
-    save_figure3_to=None,
-    verbose=False,
-):
-    print_(
-        "Analyzing WCON file %s, with plotting rate %i" % (wcon_file_name, rate_to_plot)
-    )
+def select_frames(wcon, rate_to_plot=1, max_time_s=1e12):
+    """
+    Select the frames to analyse from a SimpleWCON: the first frame, then every
+    rate_to_plot-th frame (counting from 1), up to max_time_s.
 
-    wcon = SimpleWCON(wcon_file_name)
-
-    # Use the first frame, then every rate_to_plot-th frame (counting from 1)
+    Returns ts (n_frames), x and y (n_body_points, n_frames).
+    """
     frame_indices = [
         fi
         for fi in range(len(wcon.times))
         if (fi == 0 or (fi + 1) % rate_to_plot == 0) and wcon.times[fi] <= max_time_s
     ]
+    return wcon.times[frame_indices], wcon.x[:, frame_indices], wcon.y[:, frame_indices]
 
-    speed_units = "%s/%s" % (wcon.x_units_used, wcon.t_units)
 
-    ts = [float(wcon.times[fi]) for fi in frame_indices]
-    x = {t_s: wcon.x[:, fi] for t_s, fi in zip(ts, frame_indices)}
-    y = {t_s: wcon.y[:, fi] for t_s, fi in zip(ts, frame_indices)}
+def _swap_xy(x, y):
+    # The worm is plotted with x and y swapped, so that it moves "up"
+    return y, x
 
-    import matplotlib.pyplot as plt
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+def compute_speeds(ts, x, y):
+    """
+    Speed of the middle point of the body and of the average of all body points,
+    in the x and y directions of the file, between successive frames.
 
-    num_plotted_frames = 0
+    Returns a dict with the times of the speeds (ts[1:]), the number of body
+    points, the index of the middle point and the four speed series.
+    """
+    points = x.shape[0]
+    middle_point = points / 2
+    dt = np.diff(ts)
 
-    middle_points = []
-    ave_points = []
-    middle_point_speed_x = []
-    middle_point_speed_y = []
-    ave_point_speed_x = []
-    ave_point_speed_y = []
-    time_points = []
+    return {
+        "times": ts[1:],
+        "num_points": points,
+        "middle_point": middle_point,
+        "middle_x": np.diff(x[int(middle_point)]) / dt,
+        "middle_y": np.diff(y[int(middle_point)]) / dt,
+        "ave_x": np.diff(x.mean(axis=0)) / dt,
+        "ave_y": np.diff(y.mean(axis=0)) / dt,
+    }
 
-    xs0 = None
-    ys0 = None
-    for t_s, fi in zip(ts, frame_indices):
-        points = len(x[t_s])
-        middle_point = points / 2
 
-        if verbose:
-            print_(
-                "Frame %i: at time: %s sec found %i points: [(%s,%s),...,(%s,%s)]"
-                % (
-                    fi,
-                    t_s,
-                    points,
-                    x[t_s][0],
-                    y[t_s][0],
-                    x[t_s][points - 1],
-                    y[t_s][points - 1],
-                )
-            )
+def compute_body_curvature(ts, x, y):
+    """
+    Angle (degrees, 180 = straight) between the points 2 before and 2 after each
+    body point, for all body points except the 2 at each end.
 
-        spacing = 0.05
-
-        xs = []
-        ys = []
-        avx = 0
-        avy = 0
-        offset = num_plotted_frames * spacing
-
-        for i in range(len(x[t_s])):
-            # Swap x and y so worm moves "up"
-            xs.append(y[t_s][i] + offset)
-            ys.append(x[t_s][i])
-
-            avx += xs[-1] - offset
-            avy += ys[-1]
-
-        if xs0 is None:
-            xs0 = xs
-        if ys0 is None:
-            ys0 = ys
-
-        avx = avx / points
-        avy = avy / points
-
-        if len(middle_points) > 0:
-            dt = t_s - time_points[-1]
-            middle_point_speed_x.append(
-                (xs[int(middle_point)] - offset - middle_points[-1][0]) / dt
-            )
-
-            middle_point_speed_y.append(
-                (ys[int(middle_point)] - middle_points[-1][1]) / dt
-            )
-            # dav = dist(avx, avy, ave_points[-1][0], ave_points[-1][1])
-
-            ave_point_speed_x.append((avx - ave_points[-1][0]) / dt)
-            ave_point_speed_y.append((avy - ave_points[-1][1]) / dt)
-
-            if verbose:
-                print_(
-                    "  Speed of point"
-                    + " %i: (%s,%s) -> (%s,%s): x %s%s, y %s%s"
-                    % (
-                        middle_point,
-                        middle_points[-1][0],
-                        middle_points[-1][1],
-                        xs[int(middle_point)],
-                        ys[int(middle_point)],
-                        middle_point_speed_x[-1],
-                        speed_units,
-                        middle_point_speed_y[-1],
-                        speed_units,
-                    )
-                )
-
-            if verbose:
-                print_(
-                    "  Speed of av point "
-                    + "(%s,%s) -> : (%s,%s): x %s%s, y %s%s"
-                    % (
-                        ave_points[-1][0],
-                        ave_points[-1][1],
-                        avx,
-                        avy,
-                        ave_point_speed_x[-1],
-                        speed_units,
-                        ave_point_speed_y[-1],
-                        speed_units,
-                    )
-                )
-
-        middle_points.append((xs[int(middle_point)] - offset, ys[int(middle_point)]))
-        ave_points.append((avx, avy))
-        time_points.append(t_s)
-
-        if verbose:
-            print_(
-                "  Plot frame %i at %s s; frame %i: [(%s,%s),...#%i]"
-                % (num_plotted_frames, t_s, fi, xs[0], ys[0], len(xs))
-            )
-
-        num_plotted_frames += 1
-
-        lines = ax.plot(xs, ys, "-")
-        if num_plotted_frames % 5 == 1:
-            time_ = "%ss" % t_s if not t_s == int(t_s) else "%ss" % int(t_s)
-
-            ax.text(50 + ((num_plotted_frames - 1) * spacing), 10, time_, fontsize=12)
-        ax.plot(
-            [xx + offset for xx in xs0],
-            ys0,
-            ":",
-            color=lines[0].get_color(),
-            linewidth=0.5,
-        )
-
-    body_curv_data = np.zeros((len(ts), len(xs) - 4))
+    Returns an array of shape (n_frames, n_body_points - 4).
+    """
+    body_curv_data = np.zeros((len(ts), x.shape[0] - 4))
 
     for ti in range(len(ts)):
-        for i in range(len(y[ts[0]]))[2:-2]:
-            x1 = x[ts[ti]][i - 2]
-            xc = x[ts[ti]][i]
-            x2 = x[ts[ti]][i + 2]
+        for i in range(x.shape[0])[2:-2]:
+            x1 = x[i - 2, ti]
+            xc = x[i, ti]
+            x2 = x[i + 2, ti]
 
-            y1 = y[ts[ti]][i - 2]
-            yc = y[ts[ti]][i]
-            y2 = y[ts[ti]][i + 2]
+            y1 = y[i - 2, ti]
+            yc = y[i, ti]
+            y2 = y[i + 2, ti]
 
             a1 = math.atan2(y1 - yc, x1 - xc)
             a2 = math.atan2(y2 - yc, x2 - xc)
@@ -200,23 +91,52 @@ def analyse_wcon_file(
 
             # print("At t=%s, i=%s: angle from between (%s,%s) - (%s,%s) - (%s,%s) = %s, %sdeg"%(ts[ti], i, x1,y1,xc,yc,x2,y2,angle,deg))
 
-    info = "Loaded: %s frames from %s, using %i frames" % (
-        len(wcon.times),
-        wcon_file_name,
-        len(ts),
-    )
-    print_(info)
+    return body_curv_data
 
-    info = "Midline of worm through time (to %s seconds)" % time_points[-1]
+
+def plot_midlines(ts, x, y, spacing=0.05, save_to=None):
+    """
+    Plot the midline of the worm at each time, each shifted by spacing, with the
+    first midline (dotted) repeated at each shift for comparison.
+    """
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    plot_x, plot_y = _swap_xy(x, y)
+
+    for fi, t_s in enumerate(ts):
+        offset = fi * spacing
+
+        lines = ax.plot(plot_x[:, fi] + offset, plot_y[:, fi], "-")
+        if fi % 5 == 0:
+            time_ = "%ss" % t_s if not t_s == int(t_s) else "%ss" % int(t_s)
+
+            ax.text(50 + (fi * spacing), 10, time_, fontsize=12)
+        ax.plot(
+            plot_x[:, 0] + offset,
+            plot_y[:, 0],
+            ":",
+            color=lines[0].get_color(),
+            linewidth=0.5,
+        )
+
+    info = "Midline of worm through time (to %s seconds)" % ts[-1]
 
     plt.xlabel("y direction (scaled)")
-    plt.ylabel("x direction (%s)" % wcon.x_units_used)
+    plt.ylabel("x direction")
     fig.canvas.manager.set_window_title(info)
     plt.title(info)
 
-    if save_figure1_to:
-        plt.savefig(save_figure1_to)
+    if save_to:
+        plt.savefig(save_to)
 
+    return fig
+
+
+def plot_speeds(speeds, save_to=None):
+    """
+    Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
+    """
     fig = plt.figure()
     info = "Speed of worm in x (lateral) & y (along body) directions"
     fig.canvas.manager.set_window_title(info)
@@ -224,40 +144,54 @@ def analyse_wcon_file(
     plt.xlabel("Time (s)")
     plt.ylabel("Speed")
 
+    times = speeds["times"]
+    points = speeds["num_points"]
+    middle_point = speeds["middle_point"]
+    ave_x, ave_y = _swap_xy(speeds["ave_x"], speeds["ave_y"])
+    middle_x, middle_y = _swap_xy(speeds["middle_x"], speeds["middle_y"])
+
     plt.plot(
-        time_points[1:],
-        ave_point_speed_x,
+        times,
+        ave_x,
         "red",
         label="Speed in x of average of %i points" % points,
     )
     plt.plot(
-        time_points[1:],
-        middle_point_speed_x,
+        times,
+        middle_x,
         "pink",
         label="Speed in x dir of point %i/%i" % (middle_point, points),
         linestyle="--",
     )
     plt.plot(
-        time_points[1:],
-        ave_point_speed_y,
+        times,
+        ave_y,
         "blue",
         label="Speed in y of average of %i points" % points,
     )
     plt.plot(
-        time_points[1:],
-        middle_point_speed_y,
+        times,
+        middle_y,
         "cyan",
         label="Speed in y dir of point %i/%i" % (middle_point, points),
         linestyle="--",
     )
 
-    plt.plot([0, time_points[-1]], [0, 0], "grey", linestyle=":")
+    plt.plot([0, times[-1]], [0, 0], "grey", linestyle=":")
 
     plt.legend(loc=2, fontsize="x-small")
 
-    if save_figure2_to:
-        plt.savefig(save_figure2_to, bbox_inches="tight")
+    if save_to:
+        plt.savefig(save_to, bbox_inches="tight")
 
+    return fig
+
+
+def plot_body_curvature(ts, body_curv_data, save_to=None):
+    """
+    Plot the output of compute_body_curvature as a heat map of curvature against
+    time and position along the body.
+    """
     fig = plt.figure()
 
     plt.xlabel("Time (s)")
@@ -272,11 +206,7 @@ def analyse_wcon_file(
     plt.title(info)
 
     xt = ax.get_xticks()
-    # print(xt)
-    time_ticks = [
-        time_points[int(ti)] if (ti >= 0 and ti < len(time_points)) else 0 for ti in xt
-    ]
-    # print(time_ticks)
+    time_ticks = [ts[int(ti)] if (ti >= 0 and ti < len(ts)) else 0 for ti in xt]
     # Fix the ticks before labelling them (keeping the current view limits)
     xlim = ax.get_xlim()
     ax.set_xticks(xt)
@@ -285,8 +215,36 @@ def analyse_wcon_file(
 
     fig.colorbar(plot0)
 
-    if save_figure3_to:
-        plt.savefig(save_figure3_to, bbox_inches="tight")
+    if save_to:
+        plt.savefig(save_to, bbox_inches="tight")
+
+    return fig
+
+
+def analyse_wcon_file(
+    wcon_file_name,
+    rate_to_plot=1,
+    max_time_s=1e12,
+    plot=False,
+    save_figure1_to=None,
+    save_figure2_to=None,
+    save_figure3_to=None,
+):
+    print_(
+        "Analyzing WCON file %s, with plotting rate %i" % (wcon_file_name, rate_to_plot)
+    )
+
+    wcon = SimpleWCON(wcon_file_name)
+    ts, x, y = select_frames(wcon, rate_to_plot, max_time_s)
+
+    print_(
+        "Loaded: %s frames from %s, using %i frames"
+        % (len(wcon.times), wcon_file_name, len(ts))
+    )
+
+    plot_midlines(ts, x, y, save_to=save_figure1_to)
+    plot_speeds(compute_speeds(ts, x, y), save_to=save_figure2_to)
+    plot_body_curvature(ts, compute_body_curvature(ts, x, y), save_to=save_figure3_to)
 
     if plot:
         plt.show()
@@ -356,5 +314,4 @@ if __name__ == "__main__":
     analyse_wcon_file(
         wcon_file,
         plot="-nogui" not in sys.argv,
-        verbose=False,
     )
