@@ -10,6 +10,8 @@ class SimpleWCON:
         if wcon_file.endswith("wcon.zip"):
             import zipfile
 
+            print(f"  === Loading WCON from zip file: {wcon_file}...")
+
             with zipfile.ZipFile(wcon_file, "r") as zip_ref:
                 wcon_files = [f for f in zip_ref.namelist() if f.endswith(".wcon")]
                 if len(wcon_files) == 0:
