@@ -1,5 +1,5 @@
 # WCONViewer
-Python based viewer for WCON files in 2D
+Python based 2D viewer for WCON files
 
 ## Installation
 
