@@ -93,7 +93,6 @@ class WormView:
         return px, py
 
     def reset(self):
-
         print(" - Resetting WormView")
         self.midline_plot = None
         self.perimeter_plot = None
@@ -370,8 +369,8 @@ def show_worm_view(
     minor_radius: float = 40e-3,
     start_play: bool = False,
     show_curvature: bool = False,
+    show_plots_already: bool = True,
 ):
-
     if not nogui:
         # Use Qt for the interactive windows (e.g. so the curvature window can be
         # positioned); nogui keeps the default backend so it can run headless
@@ -393,11 +392,17 @@ def show_worm_view(
         wcon_file, ignore_wcon_perimeter, suppress_automatic_generation, minor_radius
     )
 
+    time_line = None
     if show_curvature:
-        from wconviewer.Utils import compute_body_curvature, plot_body_curvature
+        from wconviewer.Utils import (
+            compute_body_curvature,
+            generate_body_curvature_plot,
+        )
 
         body_curv_data = compute_body_curvature(wv.wcon.times, wv.wcon.x, wv.wcon.y)
-        fig_curv = plot_body_curvature(wv.wcon.times, body_curv_data)
+        fig_curv = generate_body_curvature_plot(wv.wcon.times, body_curv_data)
+        # Red line marking the time shown by the player (x axis is the time index)
+        time_line = fig_curv.axes[0].axvline(0, color="red", linewidth=1)
 
         # Only the Qt backends can position the window (not e.g. Agg)
         window = getattr(fig_curv.canvas.manager, "window", None)
@@ -408,6 +413,9 @@ def show_worm_view(
 
     def update(ti):
         print(" ------  Animating the plot for time index: %d" % ti)
+        if time_line is not None:
+            time_line.set_xdata([ti, ti])
+            fig_curv.canvas.draw_idle()
         return wv.update(ti)
 
     anim = Player(
@@ -430,7 +438,8 @@ def show_worm_view(
         anim.check_buttons.ax.set_visible(False)
 
     if not nogui:
-        plt.show()
+        if show_plots_already:
+            plt.show()
     else:
         print("GUI suppressed, exiting without showing %s." % anim)
 

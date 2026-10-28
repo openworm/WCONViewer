@@ -5,7 +5,6 @@ import numpy as np
 
 class SimpleWCON:
     def __init__(self, wcon_file):
-
         # Check whether the filename ends with wcon.zip, and if so, unzip it, read the wcon file it contains and load the contents of that using json
         if wcon_file.endswith("wcon.zip"):
             import zipfile

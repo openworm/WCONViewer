@@ -94,7 +94,7 @@ def compute_body_curvature(ts, x, y):
     return body_curv_data
 
 
-def plot_midlines(ts, x, y, spacing=0.05, save_to=None):
+def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None):
     """
     Plot the midline of the worm at each time, each shifted by spacing, with the
     first midline (dotted) repeated at each shift for comparison.
@@ -133,7 +133,7 @@ def plot_midlines(ts, x, y, spacing=0.05, save_to=None):
     return fig
 
 
-def plot_speeds(speeds, save_to=None):
+def generate_speeds_plot(speeds, save_to=None):
     """
     Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
     """
@@ -187,7 +187,14 @@ def plot_speeds(speeds, save_to=None):
     return fig
 
 
-def plot_body_curvature(ts, body_curv_data, save_to=None):
+def generate_body_curvature_plot(
+    ts,
+    body_curv_data,
+    save_to=None,
+    cmap="bwr",
+    min_curvature=170,
+    max_curvature=190,
+):
     """
     Plot the output of compute_body_curvature as a heat map of curvature against
     time and position along the body.
@@ -198,7 +205,12 @@ def plot_body_curvature(ts, body_curv_data, save_to=None):
     plt.ylabel("Percentage along worm")
 
     plot0 = plt.imshow(
-        body_curv_data.transpose(), interpolation="nearest", aspect="auto"
+        body_curv_data.transpose(),
+        interpolation="nearest",
+        aspect="auto",
+        cmap=cmap,
+        vmin=min_curvature,
+        vmax=max_curvature,
     )
     ax = plt.gca()
     info = "Propagation of curvature along body of worm (180=straight)"
@@ -225,10 +237,13 @@ def analyse_wcon_file(
     wcon_file_name,
     rate_to_plot=1,
     max_time_s=1e12,
-    plot=False,
-    save_figure1_to=None,
-    save_figure2_to=None,
-    save_figure3_to=None,
+    show_plots_already=False,
+    plot_midlines=True,
+    plot_speeds=True,
+    plot_body_curvature=True,
+    save_figure_midlines_to=None,
+    save_figure_speeds_to=None,
+    save_figure_curvature_to=None,
 ):
     print_(
         "Analyzing WCON file %s, with plotting rate %i" % (wcon_file_name, rate_to_plot)
@@ -242,16 +257,20 @@ def analyse_wcon_file(
         % (len(wcon.times), wcon_file_name, len(ts))
     )
 
-    plot_midlines(ts, x, y, save_to=save_figure1_to)
-    plot_speeds(compute_speeds(ts, x, y), save_to=save_figure2_to)
-    plot_body_curvature(ts, compute_body_curvature(ts, x, y), save_to=save_figure3_to)
+    if plot_midlines:
+        generate_midlines_plot(ts, x, y, save_to=save_figure_midlines_to)
+    if plot_speeds:
+        generate_speeds_plot(compute_speeds(ts, x, y), save_to=save_figure_speeds_to)
+    if plot_body_curvature:
+        generate_body_curvature_plot(
+            ts, compute_body_curvature(ts, x, y), save_to=save_figure_curvature_to
+        )
 
-    if plot:
+    if show_plots_already:
         plt.show()
 
 
 def validate(wcon_file):
-
     if not wcon_file.endswith(".wcon"):
         print_("Cannot validate file: %s!! WCON file must end with .wcon!!" % wcon_file)
         return
@@ -313,5 +332,5 @@ if __name__ == "__main__":
 
     analyse_wcon_file(
         wcon_file,
-        plot="-nogui" not in sys.argv,
+        show_plots_already="-nogui" not in sys.argv,
     )
