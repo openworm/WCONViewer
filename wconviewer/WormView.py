@@ -213,14 +213,14 @@ class WormView:
         f = ti / len(self.wcon.times)
         t = self.wcon.times[ti]
         print(
-            f" - Updating WormView for time index: {ti} ({t}{self.wcon.t_units}), with {len(self.wcon.x[:, ti])} x points and {len(self.wcon.y[:, ti])} y points."
+            f" - Updating WormView for time index: {ti} ({t}{self.wcon.t_units_used}), with {len(self.wcon.x[:, ti])} x points and {len(self.wcon.y[:, ti])} y points."
         )
         # global midline_plot, perimeter_plot, times, t_units, x, y, px, py, ax
 
         color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
         print(
             "     Time %s %s, step: %s, fract: %f, color: %s"
-            % (t, self.wcon.t_units, ti, f, color)
+            % (t, self.wcon.t_units_used, ti, f, color)
         )
 
         if self.midline_plot is None:
@@ -228,7 +228,7 @@ class WormView:
                 self.wcon.x[:, ti],
                 self.wcon.y[:, ti],
                 color="g",
-                label="t=%sms" % self.wcon.times[ti],
+                label="t=%s%s" % (self.wcon.times[ti], self.wcon.t_units_used),
                 linewidth=0.5,
             )
         else:
@@ -250,7 +250,7 @@ class WormView:
                     [self.wcon.y[0, ti]],
                     color="r",
                     marker="o",
-                    label="t=%sms" % self.wcon.times[ti],
+                    label="t=%s%s" % (self.wcon.times[ti], self.wcon.t_units_used),
                     linewidth=2,
                 )
             else:
@@ -400,7 +400,9 @@ def show_worm_view(
         )
 
         body_curv_data = compute_body_curvature(wv.wcon.times, wv.wcon.x, wv.wcon.y)
-        fig_curv = generate_body_curvature_plot(wv.wcon.times, body_curv_data)
+        fig_curv = generate_body_curvature_plot(
+            wv.wcon.times, body_curv_data, t_units=wv.wcon.t_units_used
+        )
         # Red line marking the time shown by the player (x axis is the time index)
         time_line = fig_curv.axes[0].axvline(0, color="red", linewidth=1)
 
@@ -423,7 +425,7 @@ def show_worm_view(
         update,
         maxi=len(wv.wcon.times) - 1,
         times=[t for t in wv.wcon.times],
-        t_units=wv.wcon.t_units,
+        t_units=wv.wcon.t_units_used,
         grid_state=wv.show_grid,
         zoom_state=wv.zoom_to_worm,
         on_toggle_grid=wv.set_show_grid,

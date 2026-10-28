@@ -38,23 +38,31 @@ def _swap_xy(x, y):
 def compute_speeds(ts, x, y):
     """
     Speed of the middle point of the body and of the average of all body points,
-    in the x and y directions of the file, between successive frames.
+    in the x and y directions of the file, between successive frames, plus the
+    absolute speed (magnitude of the velocity, in any direction) of each.
 
     Returns a dict with the times of the speeds (ts[1:]), the number of body
-    points, the index of the middle point and the four speed series.
+    points, the index of the middle point and the six speed series.
     """
     points = x.shape[0]
     middle_point = points / 2
     dt = np.diff(ts)
 
+    middle_x = np.diff(x[int(middle_point)]) / dt
+    middle_y = np.diff(y[int(middle_point)]) / dt
+    ave_x = np.diff(x.mean(axis=0)) / dt
+    ave_y = np.diff(y.mean(axis=0)) / dt
+
     return {
         "times": ts[1:],
         "num_points": points,
         "middle_point": middle_point,
-        "middle_x": np.diff(x[int(middle_point)]) / dt,
-        "middle_y": np.diff(y[int(middle_point)]) / dt,
-        "ave_x": np.diff(x.mean(axis=0)) / dt,
-        "ave_y": np.diff(y.mean(axis=0)) / dt,
+        "middle_x": middle_x,
+        "middle_y": middle_y,
+        "middle_abs": np.hypot(middle_x, middle_y),
+        "ave_x": ave_x,
+        "ave_y": ave_y,
+        "ave_abs": np.hypot(ave_x, ave_y),
     }
 
 
@@ -94,7 +102,7 @@ def compute_body_curvature(ts, x, y):
     return body_curv_data
 
 
-def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None):
+def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None, t_units="s"):
     """
     Plot the midline of the worm at each time, each shifted by spacing, with the
     first midline (dotted) repeated at each shift for comparison.
@@ -109,7 +117,7 @@ def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None):
 
         lines = ax.plot(plot_x[:, fi] + offset, plot_y[:, fi], "-")
         if fi % 5 == 0:
-            time_ = "%ss" % t_s if not t_s == int(t_s) else "%ss" % int(t_s)
+            time_ = "%s%s" % (t_s if not t_s == int(t_s) else int(t_s), t_units)
 
             ax.text(50 + (fi * spacing), 10, time_, fontsize=12)
         ax.plot(
@@ -120,7 +128,7 @@ def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None):
             linewidth=0.5,
         )
 
-    info = "Midline of worm through time (to %s seconds)" % ts[-1]
+    info = "Midline of worm through time (to %s %s)" % (ts[-1], t_units)
 
     plt.xlabel("y direction (scaled)")
     plt.ylabel("x direction")
@@ -133,16 +141,16 @@ def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None):
     return fig
 
 
-def generate_speeds_plot(speeds, save_to=None):
+def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
     """
     Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
     """
     fig = plt.figure()
-    info = "Speed of worm in x (lateral) & y (along body) directions"
+    info = "Speed of worm, absolute speed and in x & y (along body) directions"
     fig.canvas.manager.set_window_title(info)
     plt.title(info)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Speed")
+    plt.xlabel("Time (%s)" % t_units)
+    plt.ylabel("Speed (%s/%s)" % (x_units, t_units))
 
     times = speeds["times"]
     points = speeds["num_points"]
@@ -152,9 +160,25 @@ def generate_speeds_plot(speeds, save_to=None):
 
     plt.plot(
         times,
+        speeds["ave_abs"],
+        "black",
+        label="Absolute speed of average of %i points" % points,
+        linewidth=1.5,
+    )
+    plt.plot(
+        times,
+        speeds["middle_abs"],
+        "grey",
+        label="Absolute speed of point %i/%i" % (middle_point, points),
+        linestyle="--",
+        linewidth=1,
+    )
+    plt.plot(
+        times,
         ave_x,
         "red",
         label="Speed in x of average of %i points" % points,
+        linewidth=0.5,
     )
     plt.plot(
         times,
@@ -162,12 +186,14 @@ def generate_speeds_plot(speeds, save_to=None):
         "pink",
         label="Speed in x dir of point %i/%i" % (middle_point, points),
         linestyle="--",
+        linewidth=0.5,
     )
     plt.plot(
         times,
         ave_y,
         "blue",
         label="Speed in y of average of %i points" % points,
+        linewidth=0.5,
     )
     plt.plot(
         times,
@@ -175,6 +201,7 @@ def generate_speeds_plot(speeds, save_to=None):
         "cyan",
         label="Speed in y dir of point %i/%i" % (middle_point, points),
         linestyle="--",
+        linewidth=0.5,
     )
 
     plt.plot([0, times[-1]], [0, 0], "grey", linestyle=":")
@@ -194,6 +221,7 @@ def generate_body_curvature_plot(
     cmap="bwr",
     min_curvature=170,
     max_curvature=190,
+    t_units="s",
 ):
     """
     Plot the output of compute_body_curvature as a heat map of curvature against
@@ -201,7 +229,7 @@ def generate_body_curvature_plot(
     """
     fig = plt.figure()
 
-    plt.xlabel("Time (s)")
+    plt.xlabel("Time (%s)" % t_units)
     plt.ylabel("Percentage along worm")
 
     plot0 = plt.imshow(
@@ -257,13 +285,24 @@ def analyse_wcon_file(
         % (len(wcon.times), wcon_file_name, len(ts))
     )
 
+    t_units = wcon.t_units_used
     if plot_midlines:
-        generate_midlines_plot(ts, x, y, save_to=save_figure_midlines_to)
+        generate_midlines_plot(
+            ts, x, y, save_to=save_figure_midlines_to, t_units=t_units
+        )
     if plot_speeds:
-        generate_speeds_plot(compute_speeds(ts, x, y), save_to=save_figure_speeds_to)
+        generate_speeds_plot(
+            compute_speeds(ts, x, y),
+            save_to=save_figure_speeds_to,
+            t_units=t_units,
+            x_units=wcon.x_units_used,
+        )
     if plot_body_curvature:
         generate_body_curvature_plot(
-            ts, compute_body_curvature(ts, x, y), save_to=save_figure_curvature_to
+            ts,
+            compute_body_curvature(ts, x, y),
+            save_to=save_figure_curvature_to,
+            t_units=t_units,
         )
 
     if show_plots_already:

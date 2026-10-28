@@ -194,8 +194,7 @@ class Player(FuncAnimation):
 
 
 def main():
-    """Simple test of the Player: a point moving along a sine wave.
-    """
+    """Simple test of the Player: a point moving along a sine wave."""
 
     num_points = 100
     t_units = "ms"
