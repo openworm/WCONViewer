@@ -149,6 +149,7 @@ class WormView:
         ignore_wcon_perimeter=False,
         suppress_automatic_generation=False,
         minor_radius=40e-3,
+        max_time=None,
     ):
         # global times, t_units, x, y, px, py, ax
 
@@ -157,7 +158,7 @@ class WormView:
         plt.get_current_fig_manager().set_window_title("WCON replay")
         self.ax.set_aspect("equal")
 
-        self.wcon = SimpleWCON(wcon_file)
+        self.wcon = SimpleWCON(wcon_file, max_time=max_time)
 
         self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
         self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
@@ -263,6 +264,11 @@ class WormView:
                 xi = np.concatenate([xi, self.px[:, ti]])
                 yi = np.concatenate([yi, self.py[:, ti]])
 
+            # No positions in this frame (e.g. the tracker lost the worm), so
+            # keep the previous view
+            if np.isnan(xi).all() or np.isnan(yi).all():
+                return self.midline_plot, self.perimeter_plot, self.head_plot
+
             cx = (np.nanmax(xi) + np.nanmin(xi)) / 2
             cy = (np.nanmax(yi) + np.nanmin(yi)) / 2
 
@@ -332,6 +338,20 @@ def parse_args():
         default=False,
         help="Show a plot of the curvature of the worm.",
     )
+    parser.add_argument(
+        "-speed",
+        "--show_speed",
+        action="store_true",
+        default=False,
+        help="Show a plot of the speed of the worm.",
+    )
+    parser.add_argument(
+        "-max_time",
+        "--max_time",
+        type=float,
+        default=None,
+        help="Only load the WCON data up to this time (in seconds).",
+    )
 
     args = parser.parse_args()
 
@@ -355,6 +375,8 @@ def main():
         args.suppress_automatic_generation,
         args.minor_radius,
         show_curvature=args.show_curvature,
+        max_time=args.max_time,
+        show_speed=args.show_speed,
     )
 
 
@@ -370,6 +392,8 @@ def show_worm_view(
     start_play: bool = False,
     show_curvature: bool = False,
     show_plots_already: bool = True,
+    max_time: float = None,
+    show_speed: bool = False,
 ):
     if not nogui:
         # Use Qt for the interactive windows (e.g. so the curvature window can be
@@ -389,10 +413,26 @@ def show_worm_view(
     )
 
     fig, ax = wv.get_plot(
-        wcon_file, ignore_wcon_perimeter, suppress_automatic_generation, minor_radius
+        wcon_file,
+        ignore_wcon_perimeter,
+        suppress_automatic_generation,
+        minor_radius,
+        max_time=max_time,
     )
 
-    time_line = None
+    # Red lines in the other plots marking the time shown by the player, each
+    # with a function giving the x value of the line for a time index
+    time_lines = []
+
+    def add_time_line(fig_other, x_for_index, window_x):
+        time_lines.append(
+            (fig_other.axes[0].axvline(0, color="red", linewidth=1), x_for_index)
+        )
+        # Only the Qt backends can position the window (not e.g. Agg)
+        window = getattr(fig_other.canvas.manager, "window", None)
+        if hasattr(window, "setGeometry"):
+            window.setGeometry(window_x, 10, 640, 540)
+
     if show_curvature:
         from wconviewer.Utils import (
             compute_body_curvature,
@@ -403,21 +443,31 @@ def show_worm_view(
         fig_curv = generate_body_curvature_plot(
             wv.wcon.times, body_curv_data, t_units=wv.wcon.t_units_used
         )
-        # Red line marking the time shown by the player (x axis is the time index)
-        time_line = fig_curv.axes[0].axvline(0, color="red", linewidth=1)
-
-        # Only the Qt backends can position the window (not e.g. Agg)
-        window = getattr(fig_curv.canvas.manager, "window", None)
-        if hasattr(window, "setGeometry"):
-            window.setGeometry(10, 10, 640, 540)
+        # x axis is the time index
+        add_time_line(fig_curv, lambda ti: ti, 10)
     else:
         print(" - Not showing curvature plot")
 
+    if show_speed:
+        from wconviewer.Utils import compute_speeds, generate_speeds_plot
+
+        speeds = compute_speeds(
+            wv.wcon.times, wv.wcon.x, wv.wcon.y, wv.wcon.cx, wv.wcon.cy, wv.wcon.head
+        )
+        fig_speed = generate_speeds_plot(
+            speeds, t_units=wv.wcon.t_units_used, x_units=wv.wcon.x_units_used
+        )
+        # x axis is the time
+        add_time_line(fig_speed, lambda ti: wv.wcon.times[ti], 660)
+    else:
+        print(" - Not showing speed plot")
+
     def update(ti):
         print(" ------  Animating the plot for time index: %d" % ti)
-        if time_line is not None:
-            time_line.set_xdata([ti, ti])
-            fig_curv.canvas.draw_idle()
+        for time_line, x_for_index in time_lines:
+            x = x_for_index(ti)
+            time_line.set_xdata([x, x])
+            time_line.figure.canvas.draw_idle()
         return wv.update(ti)
 
     anim = Player(

@@ -89,7 +89,8 @@ def get_unit_factor(unit, kind):
 
 
 class SimpleWCON:
-    def __init__(self, wcon_file):
+    def __init__(self, wcon_file, max_time=None):
+        # max_time (in seconds): only load the timepoints up to this time
         # Check whether the filename ends with wcon.zip, and if so, unzip it, read the wcon file it contains and load the contents of that using json
         if wcon_file.endswith("wcon.zip"):
             import zipfile
@@ -161,6 +162,28 @@ class SimpleWCON:
                 % (len(data), record.get("id"))
             )
 
+        if max_time is not None:
+            # Values arrayed per timepoint have the same length as t (see
+            # "Manipulation of custom data" in the spec), so keep the start of
+            # each of those, up to the last time <= max_time
+            times = np.array(record["t"], dtype=float) * t_factor
+            after = np.nonzero(times > max_time)[0]
+            num_times = after[0] if len(after) > 0 else len(times)
+            if num_times == 0:
+                raise ValueError(
+                    f"No timepoints at or before max_time {max_time}s "
+                    f"(first time: {times[0]}s)"
+                )
+            print(
+                f" - Keeping {num_times}/{len(times)} timepoints, up to max_time {max_time}s"
+            )
+            record = {
+                key: value[:num_times]
+                if isinstance(value, list) and len(value) == len(times)
+                else value
+                for key, value in record.items()
+            }
+
         print(" - Data records: %d" % len(data))
         print(" - Data keys: %s" % list(record.keys()))
         print(" - Data time: %s" % len(record["t"]))
@@ -195,6 +218,27 @@ class SimpleWCON:
             self.oy = np.atleast_1d(np.array(self.oy, dtype=float)) * oy_factor
             self.x = self.x + self.ox
             self.y = self.y + self.oy
+
+        # Centroid: optional, but if given it is per-timepoint, and often known
+        # more accurately than the rest of the positions. Like the other
+        # positions, it is relative to the origin, if one is given.
+        if "cx" in record and "cy" in record:
+            cx_factor = factor_for("cx", "length", "mm", default_key="x")[0]
+            cy_factor = factor_for("cy", "length", "mm", default_key="y")[0]
+            self.cx = np.array(record["cx"], dtype=float) * cx_factor
+            self.cy = np.array(record["cy"], dtype=float) * cy_factor
+            if self.ox is not None and self.oy is not None:
+                self.cx = self.cx + self.ox
+                self.cy = self.cy + self.oy
+            print(f"Centroid given, cx shape: {self.cx.shape}")
+        else:
+            self.cx = None
+            self.cy = None
+
+        # Which end of the midline is the head: "L" (first point), "R" (last
+        # point) or "?" (unknown). Either a local constant, or arrayed with one
+        # value per timepoint. Assume "L" if not given.
+        self.head = record.get("head", "L")
 
         print(f"Times: {self.times}, shape: {self.times.shape}")
         print(f"x: {self.x}, shape: {self.x.shape}")

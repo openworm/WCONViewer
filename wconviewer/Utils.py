@@ -15,18 +15,25 @@ def print_(msg):
     print("WCONViewer >>> %s" % (msg))
 
 
-def select_frames(wcon, rate_to_plot=1, max_time_s=1e12):
+def select_frame_indices(wcon, rate_to_plot=1, max_time_s=1e12):
     """
-    Select the frames to analyse from a SimpleWCON: the first frame, then every
-    rate_to_plot-th frame (counting from 1), up to max_time_s.
-
-    Returns ts (n_frames), x and y (n_body_points, n_frames).
+    Indices of the frames to analyse from a SimpleWCON: the first frame, then
+    every rate_to_plot-th frame (counting from 1), up to max_time_s.
     """
-    frame_indices = [
+    return [
         fi
         for fi in range(len(wcon.times))
         if (fi == 0 or (fi + 1) % rate_to_plot == 0) and wcon.times[fi] <= max_time_s
     ]
+
+
+def select_frames(wcon, rate_to_plot=1, max_time_s=1e12):
+    """
+    Select the frames to analyse from a SimpleWCON (see select_frame_indices).
+
+    Returns ts (n_frames), x and y (n_body_points, n_frames).
+    """
+    frame_indices = select_frame_indices(wcon, rate_to_plot, max_time_s)
     return wcon.times[frame_indices], wcon.x[:, frame_indices], wcon.y[:, frame_indices]
 
 
@@ -35,34 +42,78 @@ def _swap_xy(x, y):
     return y, x
 
 
-def compute_speeds(ts, x, y):
+def _tail_to_head(x, y, head="L", min_chord_fraction=0.3):
+    """
+    Vector from the tail to the head (the end points of the midline) for each
+    frame, using the WCON head value ("L", "R" or "?", single or per frame).
+    It is nan where the head is unknown, or where the worm is curled up so much
+    that the distance between head and tail is less than min_chord_fraction of
+    the body length, as the direction it is facing is then unreliable.
+    """
+    orientation = np.array(
+        [{"L": 1.0, "R": -1.0}.get(h, np.nan) for h in np.atleast_1d(head)]
+    )
+    hx = (x[0] - x[-1]) * orientation
+    hy = (y[0] - y[-1]) * orientation
+
+    body_length = np.hypot(np.diff(x, axis=0), np.diff(y, axis=0)).sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        curled = np.hypot(hx, hy) / body_length < min_chord_fraction
+    # Also catches single point trackers, where 0/0 gives nan
+    unreliable = curled | np.isnan(body_length) | (body_length == 0)
+    hx[unreliable] = np.nan
+    hy[unreliable] = np.nan
+    return hx, hy
+
+
+def compute_speeds(ts, x, y, cx=None, cy=None, head="L", min_chord_fraction=0.3):
     """
     Speed of the middle point of the body and of the average of all body points,
-    in the x and y directions of the file, between successive frames, plus the
-    absolute speed (magnitude of the velocity, in any direction) of each.
+    in the x and y directions of the file, between successive frames.
+
+    Also the absolute speed (magnitude of the velocity, in any direction) of
+    each, and the signed speed: the absolute speed, positive if the movement is
+    towards the head and negative if towards the tail, along the line from the
+    tail to the head (averaged over the 2 frames). The signed speed is nan if
+    the direction of the head is unknown or unreliable (see _tail_to_head).
+
+    If the centroid (cx, cy: n_frames) is given, e.g. from the WCON file, it is
+    used instead of the average of all body points.
 
     Returns a dict with the times of the speeds (ts[1:]), the number of body
-    points, the index of the middle point and the six speed series.
+    points, the index of the middle point, whether the centroid was used and
+    the eight speed series.
     """
     points = x.shape[0]
     middle_point = points / 2
     dt = np.diff(ts)
+    use_centroid = cx is not None and cy is not None
 
     middle_x = np.diff(x[int(middle_point)]) / dt
     middle_y = np.diff(y[int(middle_point)]) / dt
-    ave_x = np.diff(x.mean(axis=0)) / dt
-    ave_y = np.diff(y.mean(axis=0)) / dt
+    ave_x = np.diff(cx if use_centroid else x.mean(axis=0)) / dt
+    ave_y = np.diff(cy if use_centroid else y.mean(axis=0)) / dt
+
+    hx, hy = _tail_to_head(x, y, head, min_chord_fraction)
+    hx = (hx[:-1] + hx[1:]) / 2
+    hy = (hy[:-1] + hy[1:]) / 2
+
+    def signed(vx, vy):
+        return np.sign(vx * hx + vy * hy) * np.hypot(vx, vy)
 
     return {
         "times": ts[1:],
         "num_points": points,
         "middle_point": middle_point,
+        "centroid": use_centroid,
         "middle_x": middle_x,
         "middle_y": middle_y,
         "middle_abs": np.hypot(middle_x, middle_y),
+        "middle_signed": signed(middle_x, middle_y),
         "ave_x": ave_x,
         "ave_y": ave_y,
         "ave_abs": np.hypot(ave_x, ave_y),
+        "ave_signed": signed(ave_x, ave_y),
     }
 
 
@@ -146,7 +197,7 @@ def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
     Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
     """
     fig = plt.figure()
-    info = "Speed of worm, absolute speed and in x & y (along body) directions"
+    info = "Speed of worm, signed by direction, and in x & y (along body) directions"
     fig.canvas.manager.set_window_title(info)
     plt.title(info)
     plt.xlabel("Time (%s)" % t_units)
@@ -157,19 +208,20 @@ def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
     middle_point = speeds["middle_point"]
     ave_x, ave_y = _swap_xy(speeds["ave_x"], speeds["ave_y"])
     middle_x, middle_y = _swap_xy(speeds["middle_x"], speeds["middle_y"])
+    ave = "centroid" if speeds["centroid"] else "average of %i points" % points
 
     plt.plot(
         times,
-        speeds["ave_abs"],
+        speeds["ave_signed"],
         "black",
-        label="Absolute speed of average of %i points" % points,
+        label="Speed of %s (+ve towards head)" % ave,
         linewidth=1.5,
     )
     plt.plot(
         times,
-        speeds["middle_abs"],
+        speeds["middle_signed"],
         "grey",
-        label="Absolute speed of point %i/%i" % (middle_point, points),
+        label="Speed of point %i/%i (+ve towards head)" % (middle_point, points),
         linestyle="--",
         linewidth=1,
     )
@@ -177,7 +229,7 @@ def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
         times,
         ave_x,
         "red",
-        label="Speed in x of average of %i points" % points,
+        label="Speed in x of %s" % ave,
         linewidth=0.5,
     )
     plt.plot(
@@ -192,7 +244,7 @@ def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
         times,
         ave_y,
         "blue",
-        label="Speed in y of average of %i points" % points,
+        label="Speed in y of %s" % ave,
         linewidth=0.5,
     )
     plt.plot(
@@ -279,6 +331,13 @@ def analyse_wcon_file(
 
     wcon = SimpleWCON(wcon_file_name)
     ts, x, y = select_frames(wcon, rate_to_plot, max_time_s)
+    frame_indices = select_frame_indices(wcon, rate_to_plot, max_time_s)
+    cx, cy = None, None
+    if wcon.cx is not None:
+        cx, cy = wcon.cx[frame_indices], wcon.cy[frame_indices]
+    head = wcon.head
+    if isinstance(head, list):
+        head = [head[fi] for fi in frame_indices]
 
     print_(
         "Loaded: %s frames from %s, using %i frames"
@@ -292,7 +351,7 @@ def analyse_wcon_file(
         )
     if plot_speeds:
         generate_speeds_plot(
-            compute_speeds(ts, x, y),
+            compute_speeds(ts, x, y, cx, cy, head),
             save_to=save_figure_speeds_to,
             t_units=t_units,
             x_units=wcon.x_units_used,
