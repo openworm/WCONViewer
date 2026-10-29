@@ -237,8 +237,18 @@ class SimpleWCON:
 
         # Which end of the midline is the head: "L" (first point), "R" (last
         # point) or "?" (unknown). Either a local constant, or arrayed with one
-        # value per timepoint. Assume "L" if not given.
-        self.head = record.get("head", "L")
+        # value per timepoint. Per the WCON spec, if not given the head is
+        # unknown, i.e. "?".
+        self.head = record.get("head", "?")
+
+        # Index of the head point along the midline at each timepoint: 0 for
+        # "L", the last point for "R". Where the head is unknown ("?"/null),
+        # point 0 is used.
+        n_points, n_times = self.x.shape
+        heads = self.head if isinstance(self.head, list) else [self.head] * n_times
+        self.head_indices = np.array(
+            [n_points - 1 if h == "R" else 0 for h in heads], dtype=int
+        )
 
         print(f"Times: {self.times}, shape: {self.times.shape}")
         print(f"x: {self.x}, shape: {self.x.shape}")

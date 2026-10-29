@@ -33,6 +33,7 @@ class WormView:
     midline_plot = None
     perimeter_plot = None
     head_plot = None
+    head_trace_plot = None
     times = None
 
     zoom_to_worm = False
@@ -40,9 +41,15 @@ class WormView:
     zoom_side = 1.5  # in mm
 
     def __init__(
-        self, show_head=False, zoom_to_worm=False, show_grid=False, zoom_side=1.5
+        self,
+        show_head=False,
+        show_head_trace=False,
+        zoom_to_worm=False,
+        show_grid=False,
+        zoom_side=1.5,
     ):
         self.show_head = show_head
+        self.show_head_trace = show_head_trace
         self.zoom_to_worm = zoom_to_worm
         self.show_grid = show_grid
         self.zoom_side = zoom_side
@@ -97,6 +104,7 @@ class WormView:
         self.midline_plot = None
         self.perimeter_plot = None
         self.head_plot = None
+        self.head_trace_plot = None
         plt.close("all")
 
     def set_full_view_limits(self):
@@ -243,19 +251,39 @@ class WormView:
             else:
                 self.perimeter_plot.set_data(self.px[:, ti], self.py[:, ti])
 
+        # Head point at each frame so far (first or last point of the midline)
+        hi = self.wcon.head_indices[ti]
         if self.show_head:
+            hx, hy = self.wcon.x[hi, ti], self.wcon.y[hi, ti]
             if self.head_plot is None:
                 print("Adding head")
                 (self.head_plot,) = self.ax.plot(
-                    [self.wcon.x[0, ti]],
-                    [self.wcon.y[0, ti]],
+                    [hx],
+                    [hy],
                     color="r",
                     marker="o",
                     label="t=%s%s" % (self.wcon.times[ti], self.wcon.t_units_used),
                     linewidth=2,
                 )
             else:
-                self.head_plot.set_data([self.wcon.x[0, ti]], [self.wcon.y[0, ti]])
+                self.head_plot.set_data([hx], [hy])
+
+        if self.show_head_trace:
+            frames = np.arange(0, ti)
+            trace_x = self.wcon.x[self.wcon.head_indices[frames], frames]
+            trace_y = self.wcon.y[self.wcon.head_indices[frames], frames]
+            if self.head_trace_plot is None:
+                print("Adding head trace")
+                (self.head_trace_plot,) = self.ax.plot(
+                    [trace_x],
+                    [trace_y],
+                    color="grey",
+                    marker=".",
+                    markersize=0.5,
+                    linewidth=0,
+                )
+            else:
+                self.head_trace_plot.set_data([trace_x], [trace_y])
 
         if self.zoom_to_worm:
             xi = self.wcon.x[:, ti]
@@ -317,7 +345,14 @@ def parse_args():
         "-head",
         "--show_head",
         action="store_true",
-        help="Show the head of the worm.",
+        help="Show a marker for the head of the worm.",
+    )
+    parser.add_argument(
+        "-ht",
+        "--show_head_trace",
+        action="store_true",
+        default=False,
+        help="Show a trace of the head of the worm.",
     )
     parser.add_argument(
         "-zoom",
@@ -367,13 +402,14 @@ def main():
 
     show_worm_view(
         args.wcon_file,
-        args.show_head,
-        args.zoom_to_worm,
-        args.show_grid,
-        args.nogui,
-        args.ignore_wcon_perimeter,
-        args.suppress_automatic_generation,
-        args.minor_radius,
+        show_head=args.show_head,
+        show_head_trace=args.show_head_trace,
+        zoom_to_worm=args.zoom_to_worm,
+        show_grid=args.show_grid,
+        nogui=args.nogui,
+        ignore_wcon_perimeter=args.ignore_wcon_perimeter,
+        suppress_automatic_generation=args.suppress_automatic_generation,
+        minor_radius=args.minor_radius,
         show_curvature=args.show_curvature,
         max_time=args.max_time,
         show_speed=args.show_speed,
@@ -383,6 +419,7 @@ def main():
 def show_worm_view(
     wcon_file: str,
     show_head: bool = False,
+    show_head_trace: bool = False,
     zoom_to_worm: bool = False,
     show_grid: bool = False,
     nogui: bool = False,
@@ -408,6 +445,7 @@ def show_worm_view(
 
     wv = WormView(
         show_head=show_head,
+        show_head_trace=show_head_trace,
         zoom_to_worm=zoom_to_worm,
         show_grid=show_grid,
     )
