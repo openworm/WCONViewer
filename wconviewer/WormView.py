@@ -34,6 +34,7 @@ class WormView:
     perimeter_plot = None
     head_plot = None
     head_trace_plot = None
+    mean_trace_plot = None
     times = None
 
     zoom_to_worm = False
@@ -44,12 +45,14 @@ class WormView:
         self,
         show_head=False,
         show_head_trace=False,
+        show_mean_trace=False,
         zoom_to_worm=False,
         show_grid=False,
         zoom_side=1.5,
     ):
         self.show_head = show_head
         self.show_head_trace = show_head_trace
+        self.show_mean_trace = show_mean_trace
         self.zoom_to_worm = zoom_to_worm
         self.show_grid = show_grid
         self.zoom_side = zoom_side
@@ -105,6 +108,7 @@ class WormView:
         self.perimeter_plot = None
         self.head_plot = None
         self.head_trace_plot = None
+        self.mean_trace_plot = None
         plt.close("all")
 
     def set_full_view_limits(self):
@@ -133,6 +137,20 @@ class WormView:
         self.zoom_to_worm = value
         if not value:
             self.set_full_view_limits()
+
+    def set_show_head_trace(self, value):
+        print(" - Setting show_head_trace: %s" % value)
+        self.show_head_trace = value
+        if not value and self.head_trace_plot is not None:
+            self.head_trace_plot.remove()
+            self.head_trace_plot = None
+
+    def set_show_mean_trace(self, value):
+        print(" - Setting show_mean_trace: %s" % value)
+        self.show_mean_trace = value
+        if not value and self.mean_trace_plot is not None:
+            self.mean_trace_plot.remove()
+            self.mean_trace_plot = None
 
     def set_show_grid(self, value):
         print(" - Setting show_grid: %s" % value)
@@ -275,15 +293,30 @@ class WormView:
             if self.head_trace_plot is None:
                 print("Adding head trace")
                 (self.head_trace_plot,) = self.ax.plot(
-                    [trace_x],
-                    [trace_y],
+                    [],
+                    [],
                     color="grey",
                     marker=".",
                     markersize=0.5,
                     linewidth=0,
                 )
-            else:
-                self.head_trace_plot.set_data([trace_x], [trace_y])
+            self.head_trace_plot.set_data(trace_x, trace_y)
+
+        if self.show_mean_trace:
+            # Average position of the points along the midline, at each frame so far
+            mean_x = np.nanmean(self.wcon.x[:, 0:ti], axis=0)
+            mean_y = np.nanmean(self.wcon.y[:, 0:ti], axis=0)
+            if self.mean_trace_plot is None:
+                print("Adding mean position trace")
+                (self.mean_trace_plot,) = self.ax.plot(
+                    [],
+                    [],
+                    color="#555555",
+                    marker=".",
+                    markersize=0.7,
+                    linewidth=0,
+                )
+            self.mean_trace_plot.set_data(mean_x, mean_y)
 
         if self.zoom_to_worm:
             xi = self.wcon.x[:, ti]
@@ -355,6 +388,13 @@ def parse_args():
         help="Show a trace of the head of the worm.",
     )
     parser.add_argument(
+        "-mt",
+        "--show_mean_trace",
+        action="store_true",
+        default=False,
+        help="Show a trace of the average position of the points of the worm.",
+    )
+    parser.add_argument(
         "-zoom",
         "--zoom_to_worm",
         action="store_true",
@@ -404,6 +444,7 @@ def main():
         args.wcon_file,
         show_head=args.show_head,
         show_head_trace=args.show_head_trace,
+        show_mean_trace=args.show_mean_trace,
         zoom_to_worm=args.zoom_to_worm,
         show_grid=args.show_grid,
         nogui=args.nogui,
@@ -420,6 +461,7 @@ def show_worm_view(
     wcon_file: str,
     show_head: bool = False,
     show_head_trace: bool = False,
+    show_mean_trace: bool = False,
     zoom_to_worm: bool = False,
     show_grid: bool = False,
     nogui: bool = False,
@@ -446,6 +488,7 @@ def show_worm_view(
     wv = WormView(
         show_head=show_head,
         show_head_trace=show_head_trace,
+        show_mean_trace=show_mean_trace,
         zoom_to_worm=zoom_to_worm,
         show_grid=show_grid,
     )
@@ -518,6 +561,10 @@ def show_worm_view(
         zoom_state=wv.zoom_to_worm,
         on_toggle_grid=wv.set_show_grid,
         on_toggle_zoom=wv.set_zoom_to_worm,
+        head_trace_state=wv.show_head_trace,
+        mean_trace_state=wv.show_mean_trace,
+        on_toggle_head_trace=wv.set_show_head_trace,
+        on_toggle_mean_trace=wv.set_show_mean_trace,
         # When saving a movie (nogui) the animation always runs through
         start_play=start_play or nogui,
     )

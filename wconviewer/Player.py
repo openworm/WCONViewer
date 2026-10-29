@@ -23,8 +23,12 @@ class Player(FuncAnimation):
         t_units="",
         grid_state=False,
         zoom_state=False,
+        head_trace_state=False,
+        mean_trace_state=False,
         on_toggle_grid=None,
         on_toggle_zoom=None,
+        on_toggle_head_trace=None,
+        on_toggle_mean_trace=None,
         start_play=True,
         **kwargs,
     ):
@@ -40,6 +44,10 @@ class Player(FuncAnimation):
         self.zoom_state = zoom_state
         self.on_toggle_grid = on_toggle_grid
         self.on_toggle_zoom = on_toggle_zoom
+        self.head_trace_state = head_trace_state
+        self.mean_trace_state = mean_trace_state
+        self.on_toggle_head_trace = on_toggle_head_trace
+        self.on_toggle_mean_trace = on_toggle_mean_trace
         self.setup(pos)
 
         FuncAnimation.__init__(
@@ -154,10 +162,17 @@ class Player(FuncAnimation):
 
         # self.text_box = matplotlib.widgets.TextBox(textax, label="", initial="0 ms")
 
-        checkax = self.fig.add_axes([0.02, 0.01, 0.13, 0.08])
-        self.check_labels = ["Grid", "Zoom"]
+        checkax = self.fig.add_axes([0.02, 0.01, 0.17, 0.16])
+        self.check_labels = ["Grid", "Zoom", "Head", "Mean"]
         self.check_buttons = matplotlib.widgets.CheckButtons(
-            checkax, self.check_labels, [self.grid_state, self.zoom_state]
+            checkax,
+            self.check_labels,
+            [
+                self.grid_state,
+                self.zoom_state,
+                self.head_trace_state,
+                self.mean_trace_state,
+            ],
         )
         self.check_buttons.on_clicked(self.on_check_clicked)
 
@@ -171,6 +186,14 @@ class Player(FuncAnimation):
             self.zoom_state = status["Zoom"]
             if self.on_toggle_zoom is not None:
                 self.on_toggle_zoom(self.zoom_state)
+        elif label == "Head":
+            self.head_trace_state = status["Head"]
+            if self.on_toggle_head_trace is not None:
+                self.on_toggle_head_trace(self.head_trace_state)
+        elif label == "Mean":
+            self.mean_trace_state = status["Mean"]
+            if self.on_toggle_mean_trace is not None:
+                self.on_toggle_mean_trace(self.mean_trace_state)
 
         self.func(self.i)
         self.fig.canvas.draw_idle()
