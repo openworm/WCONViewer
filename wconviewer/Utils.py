@@ -46,13 +46,13 @@ def _tail_to_head(x, y, head="L", min_chord_fraction=0.3):
     """
     Vector from the tail to the head (the end points of the midline) for each
     frame, using the WCON head value ("L", "R" or "?", single or per frame).
-    It is nan where the head is unknown, or where the worm is curled up so much
-    that the distance between head and tail is less than min_chord_fraction of
-    the body length, as the direction it is facing is then unreliable.
+    Where the head is unknown ("?" or null), point 0 is assumed to be the head,
+    as for the head marker and trace in the viewer. It is nan where the worm is
+    curled up so much that the distance between head and tail is less than
+    min_chord_fraction of the body length, as the direction it is facing is then
+    unreliable.
     """
-    orientation = np.array(
-        [{"L": 1.0, "R": -1.0}.get(h, np.nan) for h in np.atleast_1d(head)]
-    )
+    orientation = np.array([-1.0 if h == "R" else 1.0 for h in np.atleast_1d(head)])
     hx = (x[0] - x[-1]) * orientation
     hy = (y[0] - y[-1]) * orientation
 
@@ -66,43 +66,61 @@ def _tail_to_head(x, y, head="L", min_chord_fraction=0.3):
     return hx, hy
 
 
-def compute_speeds(ts, x, y, cx=None, cy=None, head="L", min_chord_fraction=0.3):
+def compute_speeds(
+    ts, x, y, cx=None, cy=None, head="L", min_chord_fraction=0.3, window=1
+):
     """
     Speed of the middle point of the body and of the average of all body points,
-    in the x and y directions of the file, between successive frames.
+    in the x and y directions of the file, between successive frames (or, if
+    window > 1, between frames `window` steps apart, i.e. the net displacement
+    over the window divided by its duration, which smooths out tracking noise
+    but also blurs changes faster than the window).
 
     Also the absolute speed (magnitude of the velocity, in any direction) of
     each, and the signed speed: the absolute speed, positive if the movement is
     towards the head and negative if towards the tail, along the line from the
-    tail to the head (averaged over the 2 frames). The signed speed is nan if
-    the direction of the head is unknown or unreliable (see _tail_to_head).
+    tail to the head (averaged over the 2 end frames of the window). The signed speed is nan if
+    the direction of the head is unreliable (see _tail_to_head).
 
     If the centroid (cx, cy: n_frames) is given, e.g. from the WCON file, it is
     used instead of the average of all body points.
 
-    Returns a dict with the times of the speeds (ts[1:]), the number of body
+    Returns a dict with the times of the speeds (the midpoints of the windows),
+    the window used, the number of body
     points, the index of the middle point, whether the centroid was used and
     the eight speed series.
     """
     points = x.shape[0]
     middle_point = points / 2
-    dt = np.diff(ts)
+    ts = np.asarray(ts)
+    if window < 1 or window >= len(ts):
+        raise ValueError(
+            "Speed window must be between 1 and %i frames, not %s"
+            % (len(ts) - 1, window)
+        )
+
+    def diff(a):
+        # Change over `window` steps; nan if either end frame is missing
+        return a[window:] - a[:-window]
+
+    dt = diff(ts)
     use_centroid = cx is not None and cy is not None
 
-    middle_x = np.diff(x[int(middle_point)]) / dt
-    middle_y = np.diff(y[int(middle_point)]) / dt
-    ave_x = np.diff(cx if use_centroid else x.mean(axis=0)) / dt
-    ave_y = np.diff(cy if use_centroid else y.mean(axis=0)) / dt
+    middle_x = diff(x[int(middle_point)]) / dt
+    middle_y = diff(y[int(middle_point)]) / dt
+    ave_x = diff(cx if use_centroid else x.mean(axis=0)) / dt
+    ave_y = diff(cy if use_centroid else y.mean(axis=0)) / dt
 
     hx, hy = _tail_to_head(x, y, head, min_chord_fraction)
-    hx = (hx[:-1] + hx[1:]) / 2
-    hy = (hy[:-1] + hy[1:]) / 2
+    hx = (hx[:-window] + hx[window:]) / 2
+    hy = (hy[:-window] + hy[window:]) / 2
 
     def signed(vx, vy):
         return np.sign(vx * hx + vy * hy) * np.hypot(vx, vy)
 
     return {
-        "times": ts[1:],
+        "times": (ts[:-window] + ts[window:]) / 2,
+        "window": window,
         "num_points": points,
         "middle_point": middle_point,
         "centroid": use_centroid,
@@ -192,12 +210,17 @@ def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None, t_units="s"):
     return fig
 
 
-def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
+def generate_speeds_plot(
+    speeds, save_to=None, t_units="s", x_units="mm", show_xy=False
+):
     """
     Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
     """
     fig = plt.figure()
     info = "Speed of worm, signed by direction, and in x & y (along body) directions"
+    window = speeds.get("window", 1)
+    if window > 1:
+        info += ", over %i time steps" % window
     fig.canvas.manager.set_window_title(info)
     plt.title(info)
     plt.xlabel("Time (%s)" % t_units)
@@ -225,36 +248,37 @@ def generate_speeds_plot(speeds, save_to=None, t_units="s", x_units="mm"):
         linestyle="--",
         linewidth=1,
     )
-    plt.plot(
-        times,
-        ave_x,
-        "red",
-        label="Speed in x of %s" % ave,
-        linewidth=0.5,
-    )
-    plt.plot(
-        times,
-        middle_x,
-        "pink",
-        label="Speed in x dir of point %i/%i" % (middle_point, points),
-        linestyle="--",
-        linewidth=0.5,
-    )
-    plt.plot(
-        times,
-        ave_y,
-        "blue",
-        label="Speed in y of %s" % ave,
-        linewidth=0.5,
-    )
-    plt.plot(
-        times,
-        middle_y,
-        "cyan",
-        label="Speed in y dir of point %i/%i" % (middle_point, points),
-        linestyle="--",
-        linewidth=0.5,
-    )
+    if show_xy:
+        plt.plot(
+            times,
+            ave_x,
+            "red",
+            label="Speed in x of %s" % ave,
+            linewidth=0.5,
+        )
+        plt.plot(
+            times,
+            middle_x,
+            "pink",
+            label="Speed in x dir of point %i/%i" % (middle_point, points),
+            linestyle="--",
+            linewidth=0.5,
+        )
+        plt.plot(
+            times,
+            ave_y,
+            "blue",
+            label="Speed in y of %s" % ave,
+            linewidth=0.5,
+        )
+        plt.plot(
+            times,
+            middle_y,
+            "cyan",
+            label="Speed in y dir of point %i/%i" % (middle_point, points),
+            linestyle="--",
+            linewidth=0.5,
+        )
 
     plt.plot([0, times[-1]], [0, 0], "grey", linestyle=":")
 
@@ -320,6 +344,7 @@ def analyse_wcon_file(
     show_plots_already=False,
     plot_midlines=True,
     plot_speeds=True,
+    speed_window=1,
     plot_body_curvature=True,
     save_figure_midlines_to=None,
     save_figure_speeds_to=None,
@@ -351,7 +376,7 @@ def analyse_wcon_file(
         )
     if plot_speeds:
         generate_speeds_plot(
-            compute_speeds(ts, x, y, cx, cy, head),
+            compute_speeds(ts, x, y, cx, cy, head, window=speed_window),
             save_to=save_figure_speeds_to,
             t_units=t_units,
             x_units=wcon.x_units_used,

@@ -421,6 +421,13 @@ def parse_args():
         help="Show a plot of the speed of the worm.",
     )
     parser.add_argument(
+        "-speed_window",
+        "--speed_window",
+        type=int,
+        default=5,
+        help="Calculate speeds from the change in position over this many time steps (default: 5, i.e. between successive frames). Larger values smooth out noise but blur fast changes.",
+    )
+    parser.add_argument(
         "-max_time",
         "--max_time",
         type=float,
@@ -454,6 +461,7 @@ def main():
         show_curvature=args.show_curvature,
         max_time=args.max_time,
         show_speed=args.show_speed,
+        speed_window=args.speed_window,
     )
 
 
@@ -473,6 +481,7 @@ def show_worm_view(
     show_plots_already: bool = True,
     max_time: float = None,
     show_speed: bool = False,
+    speed_window: int = 30,
 ):
     if not nogui:
         # Use Qt for the interactive windows (e.g. so the curvature window can be
@@ -533,7 +542,13 @@ def show_worm_view(
         from wconviewer.Utils import compute_speeds, generate_speeds_plot
 
         speeds = compute_speeds(
-            wv.wcon.times, wv.wcon.x, wv.wcon.y, wv.wcon.cx, wv.wcon.cy, wv.wcon.head
+            wv.wcon.times,
+            wv.wcon.x,
+            wv.wcon.y,
+            wv.wcon.cx,
+            wv.wcon.cy,
+            wv.wcon.head,
+            window=speed_window,
         )
         fig_speed = generate_speeds_plot(
             speeds, t_units=wv.wcon.t_units_used, x_units=wv.wcon.x_units_used
