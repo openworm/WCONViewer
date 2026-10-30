@@ -89,8 +89,9 @@ def get_unit_factor(unit, kind):
 
 
 class SimpleWCON:
-    def __init__(self, wcon_file, max_time=None):
-        # max_time (in seconds): only load the timepoints up to this time
+    def __init__(self, wcon_file, start_time=None, end_time=None):
+        # start_time/end_time (in seconds): only load the timepoints from the
+        # first at or after start_time to the last at or before end_time
         # Check whether the filename ends with wcon.zip, and if so, unzip it, read the wcon file it contains and load the contents of that using json
         if wcon_file.endswith("wcon.zip"):
             import zipfile
@@ -162,23 +163,30 @@ class SimpleWCON:
                 % (len(data), record.get("id"))
             )
 
-        if max_time is not None:
+        if start_time is not None or end_time is not None:
             # Values arrayed per timepoint have the same length as t (see
-            # "Manipulation of custom data" in the spec), so keep the start of
-            # each of those, up to the last time <= max_time
+            # "Manipulation of custom data" in the spec), so keep the same
+            # range of each of those
             times = np.array(record["t"], dtype=float) * t_factor
-            after = np.nonzero(times > max_time)[0]
-            num_times = after[0] if len(after) > 0 else len(times)
-            if num_times == 0:
+            # (comparisons with nan, i.e. missing times, are False so they are dropped)
+            keep = np.ones(len(times), dtype=bool)
+            if start_time is not None:
+                keep &= times >= start_time
+            if end_time is not None:
+                keep &= times <= end_time
+            kept = np.nonzero(keep)[0]
+            if len(kept) == 0:
                 raise ValueError(
-                    f"No timepoints at or before max_time {max_time}s "
-                    f"(first time: {times[0]}s)"
+                    f"No timepoints within start_time={start_time}, end_time={end_time} "
+                    f"(times in file: {np.nanmin(times)}s to {np.nanmax(times)}s)"
                 )
+            first, last = kept[0], kept[-1] + 1
             print(
-                f" - Keeping {num_times}/{len(times)} timepoints, up to max_time {max_time}s"
+                f" - Keeping {last - first}/{len(times)} timepoints, "
+                f"{times[first]}s to {times[last - 1]}s"
             )
             record = {
-                key: value[:num_times]
+                key: value[first:last]
                 if isinstance(value, list) and len(value) == len(times)
                 else value
                 for key, value in record.items()

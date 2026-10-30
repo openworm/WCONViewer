@@ -175,7 +175,8 @@ class WormView:
         ignore_wcon_perimeter=False,
         suppress_automatic_generation=False,
         minor_radius=40e-3,
-        max_time=None,
+        start_time=None,
+        end_time=None,
     ):
         # global times, t_units, x, y, px, py, ax
 
@@ -184,7 +185,7 @@ class WormView:
         plt.get_current_fig_manager().set_window_title("WCON replay")
         self.ax.set_aspect("equal")
 
-        self.wcon = SimpleWCON(wcon_file, max_time=max_time)
+        self.wcon = SimpleWCON(wcon_file, start_time=start_time, end_time=end_time)
 
         self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
         self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
@@ -421,6 +422,13 @@ def parse_args():
         help="Show a plot of the speed of the worm.",
     )
     parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all the extra plots (same as -curv -speed).",
+    )
+    parser.add_argument(
         "-speed_window",
         "--speed_window",
         type=int,
@@ -428,8 +436,15 @@ def parse_args():
         help="Calculate speeds from the change in position over this many time steps (default: 5). Larger values smooth out noise but blur fast changes.",
     )
     parser.add_argument(
-        "-max_time",
-        "--max_time",
+        "-start",
+        "--start_time",
+        type=float,
+        default=None,
+        help="Only load the WCON data from this time (in seconds).",
+    )
+    parser.add_argument(
+        "-end",
+        "--end_time",
         type=float,
         default=None,
         help="Only load the WCON data up to this time (in seconds).",
@@ -458,9 +473,10 @@ def main():
         ignore_wcon_perimeter=args.ignore_wcon_perimeter,
         suppress_automatic_generation=args.suppress_automatic_generation,
         minor_radius=args.minor_radius,
-        show_curvature=args.show_curvature,
-        max_time=args.max_time,
-        show_speed=args.show_speed,
+        show_curvature=args.show_curvature or args.all,
+        start_time=args.start_time,
+        end_time=args.end_time,
+        show_speed=args.show_speed or args.all,
         speed_window=args.speed_window,
     )
 
@@ -479,7 +495,8 @@ def show_worm_view(
     start_play: bool = False,
     show_curvature: bool = False,
     show_plots_already: bool = True,
-    max_time: float = None,
+    start_time: float = None,
+    end_time: float = None,
     show_speed: bool = False,
     speed_window: int = 30,
 ):
@@ -507,7 +524,8 @@ def show_worm_view(
         ignore_wcon_perimeter,
         suppress_automatic_generation,
         minor_radius,
-        max_time=max_time,
+        start_time=start_time,
+        end_time=end_time,
     )
 
     # Red lines in the other plots marking the time shown by the player, each
