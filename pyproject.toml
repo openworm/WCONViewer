@@ -4,15 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "WCONViewer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Viewer for WCON (Worm tracker Commons Object Notation) files in 2D"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["numpy", "matplotlib"]
+dependencies = ["numpy", "matplotlib", "jsonschema"]
 
 [project.optional-dependencies]
 dev = ["ruff"]
+qt = ["PyQt6"]
 
 [project.scripts]
 wconviewer = "wconviewer.WormView:main"

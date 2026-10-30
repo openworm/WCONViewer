@@ -1,3 +1,4 @@
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import numpy as np
@@ -32,6 +33,8 @@ class WormView:
     midline_plot = None
     perimeter_plot = None
     head_plot = None
+    head_trace_plot = None
+    mean_trace_plot = None
     times = None
 
     zoom_to_worm = False
@@ -39,9 +42,17 @@ class WormView:
     zoom_side = 1.5  # in mm
 
     def __init__(
-        self, show_head=False, zoom_to_worm=False, show_grid=False, zoom_side=1.5
+        self,
+        show_head=False,
+        show_head_trace=False,
+        show_mean_trace=False,
+        zoom_to_worm=False,
+        show_grid=False,
+        zoom_side=1.5,
     ):
         self.show_head = show_head
+        self.show_head_trace = show_head_trace
+        self.show_mean_trace = show_mean_trace
         self.zoom_to_worm = zoom_to_worm
         self.show_grid = show_grid
         self.zoom_side = zoom_side
@@ -92,11 +103,12 @@ class WormView:
         return px, py
 
     def reset(self):
-
         print(" - Resetting WormView")
         self.midline_plot = None
         self.perimeter_plot = None
         self.head_plot = None
+        self.head_trace_plot = None
+        self.mean_trace_plot = None
         plt.close("all")
 
     def set_full_view_limits(self):
@@ -126,6 +138,20 @@ class WormView:
         if not value:
             self.set_full_view_limits()
 
+    def set_show_head_trace(self, value):
+        print(" - Setting show_head_trace: %s" % value)
+        self.show_head_trace = value
+        if not value and self.head_trace_plot is not None:
+            self.head_trace_plot.remove()
+            self.head_trace_plot = None
+
+    def set_show_mean_trace(self, value):
+        print(" - Setting show_mean_trace: %s" % value)
+        self.show_mean_trace = value
+        if not value and self.mean_trace_plot is not None:
+            self.mean_trace_plot.remove()
+            self.mean_trace_plot = None
+
     def set_show_grid(self, value):
         print(" - Setting show_grid: %s" % value)
         self.show_grid = value
@@ -149,6 +175,8 @@ class WormView:
         ignore_wcon_perimeter=False,
         suppress_automatic_generation=False,
         minor_radius=40e-3,
+        start_time=None,
+        end_time=None,
     ):
         # global times, t_units, x, y, px, py, ax
 
@@ -157,7 +185,7 @@ class WormView:
         plt.get_current_fig_manager().set_window_title("WCON replay")
         self.ax.set_aspect("equal")
 
-        self.wcon = SimpleWCON(wcon_file)
+        self.wcon = SimpleWCON(wcon_file, start_time=start_time, end_time=end_time)
 
         self.ax.set_xlabel("x (%s)" % self.wcon.x_units_used)
         self.ax.set_ylabel("y (%s)" % self.wcon.y_units_used)
@@ -213,14 +241,14 @@ class WormView:
         f = ti / len(self.wcon.times)
         t = self.wcon.times[ti]
         print(
-            f" - Updating WormView for time index: {ti} ({t}{self.wcon.t_units}), with {len(self.wcon.x[:, ti])} x points and {len(self.wcon.y[:, ti])} y points."
+            f" - Updating WormView for time index: {ti} ({t}{self.wcon.t_units_used}), with {len(self.wcon.x[:, ti])} x points and {len(self.wcon.y[:, ti])} y points."
         )
         # global midline_plot, perimeter_plot, times, t_units, x, y, px, py, ax
 
         color = "#%02x%02x00" % (int(0xFF * (f)), int(0xFF * (1 - f) * 0.8))
         print(
             "     Time %s %s, step: %s, fract: %f, color: %s"
-            % (t, self.wcon.t_units, ti, f, color)
+            % (t, self.wcon.t_units_used, ti, f, color)
         )
 
         if self.midline_plot is None:
@@ -228,7 +256,7 @@ class WormView:
                 self.wcon.x[:, ti],
                 self.wcon.y[:, ti],
                 color="g",
-                label="t=%sms" % self.wcon.times[ti],
+                label="t=%s%s" % (self.wcon.times[ti], self.wcon.t_units_used),
                 linewidth=0.5,
             )
         else:
@@ -242,19 +270,54 @@ class WormView:
             else:
                 self.perimeter_plot.set_data(self.px[:, ti], self.py[:, ti])
 
+        # Head point at each frame so far (first or last point of the midline)
+        hi = self.wcon.head_indices[ti]
         if self.show_head:
+            hx, hy = self.wcon.x[hi, ti], self.wcon.y[hi, ti]
             if self.head_plot is None:
                 print("Adding head")
                 (self.head_plot,) = self.ax.plot(
-                    [self.wcon.x[0, ti]],
-                    [self.wcon.y[0, ti]],
+                    [hx],
+                    [hy],
                     color="r",
                     marker="o",
-                    label="t=%sms" % self.wcon.times[ti],
+                    label="t=%s%s" % (self.wcon.times[ti], self.wcon.t_units_used),
                     linewidth=2,
                 )
             else:
-                self.head_plot.set_data([self.wcon.x[0, ti]], [self.wcon.y[0, ti]])
+                self.head_plot.set_data([hx], [hy])
+
+        if self.show_head_trace:
+            frames = np.arange(0, ti)
+            trace_x = self.wcon.x[self.wcon.head_indices[frames], frames]
+            trace_y = self.wcon.y[self.wcon.head_indices[frames], frames]
+            if self.head_trace_plot is None:
+                print("Adding head trace")
+                (self.head_trace_plot,) = self.ax.plot(
+                    [],
+                    [],
+                    color="grey",
+                    marker=".",
+                    markersize=0.5,
+                    linewidth=0,
+                )
+            self.head_trace_plot.set_data(trace_x, trace_y)
+
+        if self.show_mean_trace:
+            # Average position of the points along the midline, at each frame so far
+            mean_x = np.nanmean(self.wcon.x[:, 0:ti], axis=0)
+            mean_y = np.nanmean(self.wcon.y[:, 0:ti], axis=0)
+            if self.mean_trace_plot is None:
+                print("Adding mean position trace")
+                (self.mean_trace_plot,) = self.ax.plot(
+                    [],
+                    [],
+                    color="#555555",
+                    marker=".",
+                    markersize=0.7,
+                    linewidth=0,
+                )
+            self.mean_trace_plot.set_data(mean_x, mean_y)
 
         if self.zoom_to_worm:
             xi = self.wcon.x[:, ti]
@@ -262,6 +325,11 @@ class WormView:
             if self.px is not None and self.py is not None:
                 xi = np.concatenate([xi, self.px[:, ti]])
                 yi = np.concatenate([yi, self.py[:, ti]])
+
+            # No positions in this frame (e.g. the tracker lost the worm), so
+            # keep the previous view
+            if np.isnan(xi).all() or np.isnan(yi).all():
+                return self.midline_plot, self.perimeter_plot, self.head_plot
 
             cx = (np.nanmax(xi) + np.nanmin(xi)) / 2
             cy = (np.nanmax(yi) + np.nanmin(yi)) / 2
@@ -311,7 +379,21 @@ def parse_args():
         "-head",
         "--show_head",
         action="store_true",
-        help="Show the head of the worm.",
+        help="Show a marker for the head of the worm.",
+    )
+    parser.add_argument(
+        "-ht",
+        "--show_head_trace",
+        action="store_true",
+        default=False,
+        help="Show a trace of the head of the worm.",
+    )
+    parser.add_argument(
+        "-mt",
+        "--show_mean_trace",
+        action="store_true",
+        default=False,
+        help="Show a trace of the average position of the points of the worm.",
     )
     parser.add_argument(
         "-zoom",
@@ -324,6 +406,48 @@ def parse_args():
         "--show_grid",
         action="store_true",
         help="Show the grid in the view.",
+    )
+    parser.add_argument(
+        "-curv",
+        "--show_curvature",
+        action="store_true",
+        default=False,
+        help="Show a plot of the curvature of the worm.",
+    )
+    parser.add_argument(
+        "-speed",
+        "--show_speed",
+        action="store_true",
+        default=False,
+        help="Show a plot of the speed of the worm.",
+    )
+    parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all the extra plots (same as -curv -speed).",
+    )
+    parser.add_argument(
+        "-speed_window",
+        "--speed_window",
+        type=int,
+        default=5,
+        help="Calculate speeds from the change in position over this many time steps (default: 5). Larger values smooth out noise but blur fast changes.",
+    )
+    parser.add_argument(
+        "-start",
+        "--start_time",
+        type=float,
+        default=None,
+        help="Only load the WCON data from this time (in seconds).",
+    )
+    parser.add_argument(
+        "-end",
+        "--end_time",
+        type=float,
+        default=None,
+        help="Only load the WCON data up to this time (in seconds).",
     )
 
     args = parser.parse_args()
@@ -340,40 +464,124 @@ def main():
 
     show_worm_view(
         args.wcon_file,
-        args.show_head,
-        args.zoom_to_worm,
-        args.show_grid,
-        args.nogui,
-        args.ignore_wcon_perimeter,
-        args.suppress_automatic_generation,
-        args.minor_radius,
+        show_head=args.show_head,
+        show_head_trace=args.show_head_trace,
+        show_mean_trace=args.show_mean_trace,
+        zoom_to_worm=args.zoom_to_worm,
+        show_grid=args.show_grid,
+        nogui=args.nogui,
+        ignore_wcon_perimeter=args.ignore_wcon_perimeter,
+        suppress_automatic_generation=args.suppress_automatic_generation,
+        minor_radius=args.minor_radius,
+        show_curvature=args.show_curvature or args.all,
+        start_time=args.start_time,
+        end_time=args.end_time,
+        show_speed=args.show_speed or args.all,
+        speed_window=args.speed_window,
     )
 
 
 def show_worm_view(
     wcon_file: str,
     show_head: bool = False,
+    show_head_trace: bool = False,
+    show_mean_trace: bool = False,
     zoom_to_worm: bool = False,
     show_grid: bool = False,
     nogui: bool = False,
     ignore_wcon_perimeter: bool = False,
     suppress_automatic_generation: bool = False,
     minor_radius: float = 40e-3,
-    start_play: bool = True,
+    start_play: bool = False,
+    show_curvature: bool = False,
+    show_plots_already: bool = True,
+    start_time: float = None,
+    end_time: float = None,
+    show_speed: bool = False,
+    speed_window: int = 30,
 ):
+    if not nogui:
+        # Use Qt for the interactive windows (e.g. so the curvature window can be
+        # positioned); nogui keeps the default backend so it can run headless
+        try:
+            matplotlib.use("QtAgg")
+        except ImportError:
+            print(
+                " - No Qt bindings found (e.g. pip install .[qt]), using the "
+                "default matplotlib backend: %s" % matplotlib.get_backend()
+            )
 
     wv = WormView(
         show_head=show_head,
+        show_head_trace=show_head_trace,
+        show_mean_trace=show_mean_trace,
         zoom_to_worm=zoom_to_worm,
         show_grid=show_grid,
     )
 
     fig, ax = wv.get_plot(
-        wcon_file, ignore_wcon_perimeter, suppress_automatic_generation, minor_radius
+        wcon_file,
+        ignore_wcon_perimeter,
+        suppress_automatic_generation,
+        minor_radius,
+        start_time=start_time,
+        end_time=end_time,
     )
+
+    # Red lines in the other plots marking the time shown by the player, each
+    # with a function giving the x value of the line for a time index
+    time_lines = []
+
+    def add_time_line(fig_other, x_for_index, window_x):
+        time_lines.append(
+            (fig_other.axes[0].axvline(0, color="red", linewidth=1), x_for_index)
+        )
+        # Only the Qt backends can position the window (not e.g. Agg)
+        window = getattr(fig_other.canvas.manager, "window", None)
+        if hasattr(window, "setGeometry"):
+            window.setGeometry(window_x, 10, 640, 540)
+
+    if show_curvature:
+        from wconviewer.Utils import (
+            compute_body_curvature,
+            generate_body_curvature_plot,
+        )
+
+        body_curv_data = compute_body_curvature(wv.wcon.times, wv.wcon.x, wv.wcon.y)
+        fig_curv = generate_body_curvature_plot(
+            wv.wcon.times, body_curv_data, t_units=wv.wcon.t_units_used
+        )
+        # x axis is the time index
+        add_time_line(fig_curv, lambda ti: ti, 10)
+    else:
+        print(" - Not showing curvature plot")
+
+    if show_speed:
+        from wconviewer.Utils import compute_speeds, generate_speeds_plot
+
+        speeds = compute_speeds(
+            wv.wcon.times,
+            wv.wcon.x,
+            wv.wcon.y,
+            wv.wcon.cx,
+            wv.wcon.cy,
+            wv.wcon.head,
+            window=speed_window,
+        )
+        fig_speed = generate_speeds_plot(
+            speeds, t_units=wv.wcon.t_units_used, x_units=wv.wcon.x_units_used
+        )
+        # x axis is the time
+        add_time_line(fig_speed, lambda ti: wv.wcon.times[ti], 660)
+    else:
+        print(" - Not showing speed plot")
 
     def update(ti):
         print(" ------  Animating the plot for time index: %d" % ti)
+        for time_line, x_for_index in time_lines:
+            x = x_for_index(ti)
+            time_line.set_xdata([x, x])
+            time_line.figure.canvas.draw_idle()
         return wv.update(ti)
 
     anim = Player(
@@ -381,11 +589,15 @@ def show_worm_view(
         update,
         maxi=len(wv.wcon.times) - 1,
         times=[t for t in wv.wcon.times],
-        t_units=wv.wcon.t_units,
+        t_units=wv.wcon.t_units_used,
         grid_state=wv.show_grid,
         zoom_state=wv.zoom_to_worm,
         on_toggle_grid=wv.set_show_grid,
         on_toggle_zoom=wv.set_zoom_to_worm,
+        head_trace_state=wv.show_head_trace,
+        mean_trace_state=wv.show_mean_trace,
+        on_toggle_head_trace=wv.set_show_head_trace,
+        on_toggle_mean_trace=wv.set_show_mean_trace,
         # When saving a movie (nogui) the animation always runs through
         start_play=start_play or nogui,
     )
@@ -396,7 +608,8 @@ def show_worm_view(
         anim.check_buttons.ax.set_visible(False)
 
     if not nogui:
-        plt.show()
+        if show_plots_already:
+            plt.show()
     else:
         print("GUI suppressed, exiting without showing %s." % anim)
 

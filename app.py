@@ -106,7 +106,7 @@ st.pyplot(wv.fig, clear_figure=False)
 
 t_val = wv.wcon.times[ti]
 st.caption(
-    f"Frame {ti + 1} / {n_frames} — t = {t_val} {wv.wcon.t_units} "
+    f"Frame {ti + 1} / {n_frames} — t = {t_val} {wv.wcon.t_units_used} "
     f"({'playing' if st.session_state.running else 'paused'})"
 )
 st.progress((ti + 1) / n_frames if n_frames else 0.0)

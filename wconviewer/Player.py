@@ -23,8 +23,12 @@ class Player(FuncAnimation):
         t_units="",
         grid_state=False,
         zoom_state=False,
+        head_trace_state=False,
+        mean_trace_state=False,
         on_toggle_grid=None,
         on_toggle_zoom=None,
+        on_toggle_head_trace=None,
+        on_toggle_mean_trace=None,
         start_play=True,
         **kwargs,
     ):
@@ -40,7 +44,12 @@ class Player(FuncAnimation):
         self.zoom_state = zoom_state
         self.on_toggle_grid = on_toggle_grid
         self.on_toggle_zoom = on_toggle_zoom
+        self.head_trace_state = head_trace_state
+        self.mean_trace_state = mean_trace_state
+        self.on_toggle_head_trace = on_toggle_head_trace
+        self.on_toggle_mean_trace = on_toggle_mean_trace
         self.setup(pos)
+
         FuncAnimation.__init__(
             self,
             self.fig,
@@ -51,6 +60,7 @@ class Player(FuncAnimation):
             save_count=save_count,
             **kwargs,
         )
+
         self.times = times
         self.t_units = t_units
 
@@ -152,10 +162,17 @@ class Player(FuncAnimation):
 
         # self.text_box = matplotlib.widgets.TextBox(textax, label="", initial="0 ms")
 
-        checkax = self.fig.add_axes([0.02, 0.01, 0.13, 0.08])
-        self.check_labels = ["Grid", "Zoom"]
+        checkax = self.fig.add_axes([0.02, 0.01, 0.17, 0.16])
+        self.check_labels = ["Grid", "Zoom", "Head", "Mean"]
         self.check_buttons = matplotlib.widgets.CheckButtons(
-            checkax, self.check_labels, [self.grid_state, self.zoom_state]
+            checkax,
+            self.check_labels,
+            [
+                self.grid_state,
+                self.zoom_state,
+                self.head_trace_state,
+                self.mean_trace_state,
+            ],
         )
         self.check_buttons.on_clicked(self.on_check_clicked)
 
@@ -169,6 +186,14 @@ class Player(FuncAnimation):
             self.zoom_state = status["Zoom"]
             if self.on_toggle_zoom is not None:
                 self.on_toggle_zoom(self.zoom_state)
+        elif label == "Head":
+            self.head_trace_state = status["Head"]
+            if self.on_toggle_head_trace is not None:
+                self.on_toggle_head_trace(self.head_trace_state)
+        elif label == "Mean":
+            self.mean_trace_state = status["Mean"]
+            if self.on_toggle_mean_trace is not None:
+                self.on_toggle_mean_trace(self.mean_trace_state)
 
         self.func(self.i)
         self.fig.canvas.draw_idle()
@@ -191,19 +216,38 @@ class Player(FuncAnimation):
         self.set_time_text(i)
 
 
-if __name__ == "__main__":
-    ### using this class is as easy as using FuncAnimation:
+def main():
+    """Simple test of the Player: a point moving along a sine wave."""
+
+    num_points = 100
+    t_units = "ms"
 
     fig, ax = plt.subplots()
-    x = np.linspace(0, 6 * np.pi, num=100)
-    y = np.sin(x)
+    ax.set_xlabel("x")
+    ax.set_ylabel("sin(x)")
 
-    ax.plot(x, y)
+    x = np.linspace(0, 6 * np.pi, num=num_points)
+    y = np.sin(x)
+    times = np.linspace(0, 1000, num=num_points)  # 1 second of "simulation" time
+
+    ax.plot(x, y, color="lightgrey")
     (point,) = ax.plot([], [], marker="o", color="crimson", ms=15)
 
     def update(i):
-        point.set_data(x[i], y[i])
+        # set_data needs sequences, not scalars, in recent matplotlib versions
+        point.set_data([x[i]], [y[i]])
+        return (point,)
 
-    ani = Player(fig, update, maxi=len(y) - 1)
+    ani = Player(  # noqa: F841 (must keep a reference so the animation isn't garbage collected)
+        fig,
+        update,
+        maxi=num_points - 1,
+        times=[round(t, 1) for t in times],
+        t_units=t_units,
+    )
 
     plt.show()
+
+
+if __name__ == "__main__":
+    main()
