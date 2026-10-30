@@ -425,7 +425,7 @@ def parse_args():
         "--speed_window",
         type=int,
         default=5,
-        help="Calculate speeds from the change in position over this many time steps (default: 5, i.e. between successive frames). Larger values smooth out noise but blur fast changes.",
+        help="Calculate speeds from the change in position over this many time steps (default: 5). Larger values smooth out noise but blur fast changes.",
     )
     parser.add_argument(
         "-max_time",
