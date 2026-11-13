@@ -296,7 +296,7 @@ class WormView:
                 (self.head_trace_plot,) = self.ax.plot(
                     [],
                     [],
-                    color="grey",
+                    color="blue",
                     marker=".",
                     markersize=0.5,
                     linewidth=0,
@@ -532,9 +532,9 @@ def show_worm_view(
     # with a function giving the x value of the line for a time index
     time_lines = []
 
-    def add_time_line(fig_other, x_for_index, window_x):
+    def add_time_line(fig_other, x_for_index, window_x, color="red"):
         time_lines.append(
-            (fig_other.axes[0].axvline(0, color="red", linewidth=1), x_for_index)
+            (fig_other.axes[0].axvline(0, color=color, linewidth=1), x_for_index)
         )
         # Only the Qt backends can position the window (not e.g. Agg)
         window = getattr(fig_other.canvas.manager, "window", None)
@@ -547,12 +547,15 @@ def show_worm_view(
             generate_body_curvature_plot,
         )
 
-        body_curv_data = compute_body_curvature(wv.wcon.times, wv.wcon.x, wv.wcon.y)
+        body_curv_data = compute_body_curvature(
+            wv.wcon.times, wv.wcon.x, wv.wcon.y, wv.wcon.head
+        )
         fig_curv = generate_body_curvature_plot(
             wv.wcon.times, body_curv_data, t_units=wv.wcon.t_units_used
         )
-        # x axis is the time index
-        add_time_line(fig_curv, lambda ti: ti, 10)
+        if fig_curv is not None:
+            # x axis is the time index
+            add_time_line(fig_curv, lambda ti: ti, 10, color="black")
     else:
         print(" - Not showing curvature plot")
 

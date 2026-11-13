@@ -135,40 +135,42 @@ def compute_speeds(
     }
 
 
-def compute_body_curvature(ts, x, y):
+def compute_body_curvature(ts, x, y, head="L"):
     """
     Angle (degrees, 180 = straight) between the points 2 before and 2 after each
     body point, for all body points except the 2 at each end.
 
-    Returns an array of shape (n_frames, n_body_points - 4).
+    The points are taken in order from the head to the tail, using the WCON head
+    value ("L", "R" or "?", single or per frame), so the first column is nearest
+    the head. If the head is "R" the order of the points is reversed for that
+    frame, and where the head is unknown ("?" or null), point 0 is assumed to be
+    the head.
+
+    Returns an array of shape (n_frames, n_body_points - 4), or None if there
+    are too few body points (e.g. single point trackers) to calculate it.
     """
-    body_curv_data = np.zeros((len(ts), x.shape[0] - 4))
+    n_points = x.shape[0]
+    if n_points < 5:
+        print_(
+            "Cannot calculate body curvature with only %i body points (need 5+)"
+            % n_points
+        )
+        return None
 
-    for ti in range(len(ts)):
-        for i in range(x.shape[0])[2:-2]:
-            x1 = x[i - 2, ti]
-            xc = x[i, ti]
-            x2 = x[i + 2, ti]
+    # Order the points from head to tail in each frame
+    reverse = np.array([h == "R" for h in np.broadcast_to(head, len(ts))])
+    order = np.arange(n_points)[:, None]
+    order = np.where(reverse[None, :], n_points - 1 - order, order)
+    frames = np.arange(len(ts))[None, :]
+    x = x[order, frames]
+    y = y[order, frames]
 
-            y1 = y[i - 2, ti]
-            yc = y[i, ti]
-            y2 = y[i + 2, ti]
+    # Angles of the lines from each body point to the points 2 before and 2 after
+    a1 = np.arctan2(y[:-4] - y[2:-2], x[:-4] - x[2:-2])
+    a2 = np.arctan2(y[4:] - y[2:-2], x[4:] - x[2:-2])
+    angle = np.mod(a2 - a1, 2 * np.pi)
 
-            a1 = math.atan2(y1 - yc, x1 - xc)
-            a2 = math.atan2(y2 - yc, x2 - xc)
-            angle = a2 - a1
-            if angle < 0:
-                angle += 2 * math.pi
-            if angle > 2 * math.pi:
-                angle = 2 * math.pi - angle
-
-            deg = 360 * (angle / (2 * math.pi))
-
-            body_curv_data[ti][i - 2] = deg
-
-            # print("At t=%s, i=%s: angle from between (%s,%s) - (%s,%s) - (%s,%s) = %s, %sdeg"%(ts[ti], i, x1,y1,xc,yc,x2,y2,angle,deg))
-
-    return body_curv_data
+    return np.degrees(angle).T
 
 
 def generate_midlines_plot(ts, x, y, spacing=0.05, save_to=None, t_units="s"):
@@ -217,7 +219,7 @@ def generate_speeds_plot(
     Plot the output of compute_speeds, with the same x/y swap as plot_midlines.
     """
     fig = plt.figure()
-    info = "Speed of worm, signed by direction, and in x & y (along body) directions"
+    info = "Speed of worm"
     window = speeds.get("window", 1)
     if window > 1:
         info += ", over %i time steps" % window
@@ -300,24 +302,30 @@ def generate_body_curvature_plot(
     t_units="s",
 ):
     """
-    Plot the output of compute_body_curvature as a heat map of curvature against
-    time and position along the body.
+    Plot the output of compute_body_curvature as a heat map (a kymograph) of
+    curvature against time and position along the body, with the head at the
+    bottom and the tail at the top. Returns None if body_curv_data is None.
     """
+    if body_curv_data is None:
+        return None
+
     fig = plt.figure()
 
     plt.xlabel("Time (%s)" % t_units)
-    plt.ylabel("Percentage along worm")
 
     plot0 = plt.imshow(
         body_curv_data.transpose(),
         interpolation="nearest",
         aspect="auto",
+        origin="lower",
         cmap=cmap,
         vmin=min_curvature,
         vmax=max_curvature,
     )
     ax = plt.gca()
-    info = "Propagation of curvature along body of worm (180=straight)"
+    # Just label the first (head) and last (tail) body points
+    ax.set_yticks([0, body_curv_data.shape[1] - 1], ["Head", "Tail"])
+    info = "Worm body curvature"
     fig.canvas.manager.set_window_title(info)
     plt.title(info)
 
@@ -384,7 +392,7 @@ def analyse_wcon_file(
     if plot_body_curvature:
         generate_body_curvature_plot(
             ts,
-            compute_body_curvature(ts, x, y),
+            compute_body_curvature(ts, x, y, head),
             save_to=save_figure_curvature_to,
             t_units=t_units,
         )
